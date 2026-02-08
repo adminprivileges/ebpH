@@ -34,10 +34,32 @@ This product comes with no warranty, and is built as a research system. It shoul
 
 ## Installation
 
-1. Install the prerequisites (see above).
-1. `git clone https://github.com/willfindlay/ebpH`
-1. `cd ebpH && make install` (You will be asked for your password)
-1. To install the systemd unit: `make systemd` (You will be asked for your password)
+
+### One-time dependencies
+```bash
+make deps-apt
+make pyenv-install
+```
+### Open a new shell after updating your shell init for pyenv
+### Create Python 3.8 venv
+```bash
+make pyenv-venv
+```
+###  Build and install BCC into the venv
+```bash
+make bcc-build
+```
+### Install ebpH into the venv 
+```bash
+make install
+```
+### Install systemd service
+```
+make systemd-install
+make status
+make logs
+```
+
 
 ## How to Use / Examples
 
