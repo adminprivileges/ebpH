@@ -52,9 +52,11 @@ bash
 <h3> 3. Create Python 3.8 venv </h3>
 <pre><code>
 make pyenv-venv
+make venv-check
 </code></pre>
 <h3> 4. Build and install BCC into the venv </h3>
 <pre><code>
+make install-cli
 make bcc-build
 </code></pre>
 <h3> 5. Install ebpH into the venv </h3>
