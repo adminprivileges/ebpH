@@ -36,37 +36,37 @@ This product comes with no warranty, and is built as a research system. It shoul
 
 <details>
 <summary> <h2>Makefile install</h2></summary>
-### 1. One-time dependencies
-```bash
+<h3> 1. One-time dependencies </h3>
+<pre><code>
 make deps-apt
 make pyenv-install
-```
-### 2. Open a new shell after updating your shell init for pyenv
-### 3. Create Python 3.8 venv
-```bash
+</code></pre>
+<h3> 2. Open a new shell after updating your shell init for pyenv </h3>
+<h3> 3. Create Python 3.8 venv </h3>
+<pre><code>
 make pyenv-venv
-```
-### 4. Build and install BCC into the venv
-```bash
+</code></pre>
+<h3> 4. Build and install BCC into the venv </h3>
+<pre><code>
 make bcc-build
-```
-### 5. Install ebpH into the venv 
-```bash
+</code></pre>
+<h3> 5. Install ebpH into the venv </h3>
+<pre><code>
 make install
-```
-### 6. Install systemd service
-```
+</code></pre>
+<h3> 6. Install systemd service </h3>
+<pre><code>
 make systemd-install
 make status
 make logs
-```
+</code></pre>
 </details>
 <details>
 <summary> <h2>Automated Install</h2></summary>
-## 1. Run Bootstrap Script
-```bash
+<h3> 1. Run Bootstrap Script </h3>
+<pre><code>
 bash ./script/bootstrap.sh
-```
+</code></pre>
 </details>
 
 
