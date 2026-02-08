@@ -34,10 +34,51 @@ This product comes with no warranty, and is built as a research system. It shoul
 
 ## Installation
 
-1. Install the prerequisites (see above).
-1. `git clone https://github.com/willfindlay/ebpH`
-1. `cd ebpH && make install` (You will be asked for your password)
-1. To install the systemd unit: `make systemd` (You will be asked for your password)
+<details>
+<summary> <h2>Makefile install</h2></summary>
+<h3>0. Initial Setup</h3>
+<pre><code>
+git clone https://github.com/adminprivileges/ebpH.git
+cd ebpH
+sudo apt install make</code></pre>
+<h3> 1. One-time dependencies </h3>
+<pre><code>
+make deps-apt
+make pyenv-install
+</code></pre>
+<h3> 2. Open a new shell after updating your shell init for pyenv </h3>
+<pre><code>
+bash
+</code></pre>
+<h3> 3. Create Python 3.8 venv </h3>
+<pre><code>
+make pyenv-venv
+make venv-check
+</code></pre>
+<h3> 4. Build and install BCC into the venv </h3>
+<pre><code>
+make install-cli
+make bcc-build
+</code></pre>
+<h3> 5. Install ebpH into the venv </h3>
+<pre><code>
+make install
+</code></pre>
+<h3> 6. Install systemd service </h3>
+<pre><code>
+make systemd-install
+make status
+make logs
+</code></pre>
+</details>
+<details>
+<summary> <h2>Automated Install</h2></summary>
+<h3> 1. Run Bootstrap Script </h3>
+<pre><code>
+bash ./script/bootstrap.sh
+</code></pre>
+</details>
+
 
 ## How to Use / Examples
 
