@@ -37,12 +37,10 @@ This product comes with no warranty, and is built as a research system. It shoul
 <details>
 <summary> <h2>Makefile install</h2></summary>
 <h3>0. Initial Setup</h3>
+<pre><code>
 git clone https://github.com/adminprivileges/ebpH.git
 cd ebpH
-sudo apt install make
-<pre><code>
-sudo apt install make
-</code></pre>
+sudo apt install make</code></pre>
 <h3> 1. One-time dependencies </h3>
 <pre><code>
 make deps-apt
