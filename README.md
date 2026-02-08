@@ -72,7 +72,7 @@ make logs
 </code></pre>
 </details>
 <details>
-<summary> <h2>Automated Install</h2></summary>
+<summary> <h2>Automated Install (under construction) </h2></summary>
 <h3> 1. Run Bootstrap Script </h3>
 <pre><code>
 bash ./script/bootstrap.sh
