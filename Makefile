@@ -35,6 +35,7 @@ deps-apt:
 	  cmake bison flex libedit-dev libelf-dev libfl-dev zlib1g-dev liblzma-dev \
 	  libllvm14 llvm-14-dev clang-14 libclang-14-dev libclang-cpp14-dev \
 	  linux-headers-$$(uname -r) \
+	  luajit libluajit-5.1-dev iputils-arping netperf iperf3\
 	  zip
 
 # install pyenv from the git repo
@@ -85,6 +86,7 @@ bcc-build: venv-check
 	# Install core + python bindings into the venv prefix
 	cd "$(BCC_DIR)/build-py38" && cmake --install .
 	@echo "Testing bcc import in venv..."
+	LD_LIBRARY_PATH="$(VENV_PREFIX)/lib:/usr/local/lib:/usr/lib/x86_64-linux-gnu:$$LD_LIBRARY_PATH" \
 	$(VENV_PY) -c "import bcc; from bcc import BPF; print('bcc OK:', bcc.__file__)"
 
 .PHONY: dev
