@@ -36,12 +36,19 @@ This product comes with no warranty, and is built as a research system. It shoul
 
 <details>
 <summary> <h2>Makefile install</h2></summary>
+<h3>0. Pre-Make dependencies</h3>
+<pre><code>
+sudo apt install make
+</code></pre>
 <h3> 1. One-time dependencies </h3>
 <pre><code>
 make deps-apt
 make pyenv-install
 </code></pre>
 <h3> 2. Open a new shell after updating your shell init for pyenv </h3>
+<pre><code>
+bash
+</code></pre>
 <h3> 3. Create Python 3.8 venv </h3>
 <pre><code>
 make pyenv-venv

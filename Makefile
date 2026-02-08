@@ -64,6 +64,21 @@ pyenv-venv:
 venv-check:
 	@test -x "$(VENV_PY)" || (echo "Missing venv python at $(VENV_PY). Run: make -f Makefile.pyenv pyenv-venv"; exit 1)
 
+# This is necessary to ensure that you can run the ebph tools as sudo without having to manually
+# evoke the variables every time
+.PHONY: bcc-ldconfig
+bcc-ldconfig: venv-check
+	@echo "Registering BCC libs with ld.so..."
+	@echo "$(VENV_PREFIX)/lib" | sudo tee /etc/ld.so.conf.d/ebph-bcc-pyenv.conf >/dev/null
+	sudo ldconfig
+	@echo "Verifying loader cache contains libbcc..."
+	@ldconfig -p | grep -E 'libbcc\.so' || (echo "libbcc not found in ldconfig cache"; exit 1)
+
+.PHONY: install-cli
+install-cli: venv-check
+	sudo ln -sf "$(VENV_PREFIX)/bin/ebph" /usr/local/bin/ebph
+	sudo ln -sf "$(VENV_PREFIX)/bin/ebphd" /usr/local/bin/ebphd
+
 # Build/install BCC into the pyenv venv, and patch out Debian-only --install-layout=deb
 # This the deb patch out is very necessary as the option will not be recognized and your build will fail without
 .PHONY: bcc-build
@@ -88,6 +103,7 @@ bcc-build: venv-check
 	@echo "Testing bcc import in venv..."
 	LD_LIBRARY_PATH="$(VENV_PREFIX)/lib:/usr/local/lib:/usr/lib/x86_64-linux-gnu:$$LD_LIBRARY_PATH" \
 	$(VENV_PY) -c "import bcc; from bcc import BPF; print('bcc OK:', bcc.__file__)"
+	$(MAKE) bcc-ldconfig
 
 .PHONY: dev
 dev: venv-check
