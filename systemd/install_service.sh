@@ -12,8 +12,8 @@ Description=ebpH daemon (pyenv Python 3.8)
 After=network.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
+# RemainAfterExit=yes
 
 Environment="EBPH_VENV=$VENV_PREFIX"
 Environment="PATH=$VENV_PREFIX/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -25,6 +25,11 @@ WorkingDirectory=$WORKDIR
 ExecStart=$VENV_PREFIX/bin/ebphd start
 ExecStop=$VENV_PREFIX/bin/ebphd stop
 ExecReload=$VENV_PREFIX/bin/ebphd restart
+
+# Let systemd stop the foreground process cleanly
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=2
 
 User=root
 Group=root
