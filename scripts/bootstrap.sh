@@ -17,8 +17,10 @@
 #   3) Build/install Python 3.8 and create a pyenv virtualenv
 #   4) Clone/build BCC and install BCC + Python bindings into the pyenv virtualenv
 #      - includes patching out Debian-only "setup.py --install-layout=deb" which pyenv CPython lacks
-#   5) Install ebpH into the same virtualenv (editable by default)
-#   6) Install and enable a systemd service that runs ebphd using the virtualenv
+#   5) Register the venv's lib/ with ld.so and run ldconfig (so sudo/root can find libbcc.so.0)
+#   6) Install ebpH into the same virtualenv
+#   7) Symlink ebph and ebphd into /usr/local/bin (so both user and root can run them via PATH)
+#   8) Install and enable a systemd service that runs ebphd using the virtualenv
 #
 # USAGE
 #   From the ebpH repo root:
@@ -63,6 +65,9 @@ BCC_DIR="${BCC_DIR:-$HOME/src/bcc}"
 SERVICE_NAME="${SERVICE_NAME:-ebphd}"
 # Run dev or install (default install, i havent really touched dev)
 EBPH_EDITABLE="${EBPH_EDITABLE:-0}"
+
+DO_LDCONFIG="${DO_LDCONFIG:-1}"
+DO_SYMLINKS="${DO_SYMLINKS:-1}"
 
 # Determine repository root based on this script location.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -217,8 +222,19 @@ make -j"$(nproc)"
 # Install into venv prefix (no sudo because prefix is under $HOME).
 cmake --install .
 
-# Verify BCC Python module is importable in the venv.
-"$VENV_PY" -c "import bcc; from bcc import BPF; print('bcc OK:', bcc.__file__)"
+# Verify bcc import in venv (may still fail before ldconfig if libbcc isn't in default loader paths)
+"$VENV_PY" -c "import bcc; from bcc import BPF; print('bcc python OK:', bcc.__file__)"
+
+# NEW: make libbcc.so.0 resolvable for sudo/root without LD_LIBRARY_PATH
+if [[ "$DO_LDCONFIG" == "1" ]]; then
+  echo "[6.5/8] Registering venv libs with ld.so (ldconfig)..."
+  echo "$VENV_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/ebph-bcc-pyenv.conf >/dev/null
+  sudo ldconfig
+  ldconfig -p | grep -E 'libbcc\.so' >/dev/null || die "ldconfig did not register libbcc"
+fi
+
+# Re-test import after ldconfig
+"$VENV_PY" -c "from bcc import BPF; print('bcc OK (post-ldconfig)')"
 
 # -------------------- Step 7: Install ebpH into the venv --------------------
 # We install ebpH and its pinned dependencies into the same venv.
@@ -235,6 +251,15 @@ fi
 
 # Quick sanity import.
 "$VENV_PY" -c "import ebph; print('ebph OK')"
+
+# NEW: put ebph/ebphd on PATH for user + root by symlinking to /usr/local/bin
+if [[ "$DO_SYMLINKS" == "1" ]]; then
+  echo "[7.5/8] Symlinking ebph/ebphd into /usr/local/bin..."
+  [[ -x "$VENV_PREFIX/bin/ebph"  ]] || die "Missing $VENV_PREFIX/bin/ebph"
+  [[ -x "$VENV_PREFIX/bin/ebphd" ]] || die "Missing $VENV_PREFIX/bin/ebphd"
+  sudo ln -sf "$VENV_PREFIX/bin/ebph"  /usr/local/bin/ebph
+  sudo ln -sf "$VENV_PREFIX/bin/ebphd" /usr/local/bin/ebphd
+fi
 
 # -------------------- Step 8: Install and enable systemd service --------------------
 # ebpH needs elevated privileges for many eBPF operations. systemd will run it as root,
@@ -254,10 +279,8 @@ Description=ebpH daemon (pyenv Python ${PYTHON_VERSION})
 After=network.target
 
 [Service]
-# Lets systemd start the service, but allows the service to handle itself aftewards
-Type=oneshot
-# Allows the unit to stay active after exit
-RemainAfterExit=yes
+# oneshot didnt work, simple works better
+Type=simple
 
 # used to check with venv is in use
 Environment="EBPH_VENV=$VENV_PREFIX"
@@ -272,8 +295,10 @@ LimitMEMLOCK=infinity
 WorkingDirectory=$REPO_ROOT
 
 ExecStart=$VENV_PREFIX/bin/ebphd start
-ExecStop=$VENV_PREFIX/bin/ebphd stop
-ExecReload=$VENV_PREFIX/bin/ebphd restart
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 User=root
 Group=root
@@ -294,6 +319,8 @@ echo "  Venv:    $VENV_PREFIX"
 echo "  Service: ${SERVICE_NAME}.service"
 echo
 echo "Useful commands:"
+echo "  ebph admin status"
+echo "  sudo ebph admin status"
 echo "  sudo systemctl status ${SERVICE_NAME}.service --no-pager"
 echo "  sudo journalctl -u ${SERVICE_NAME}.service -e --no-pager"
 echo
