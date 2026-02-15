@@ -191,11 +191,26 @@ git submodule update --init --recursive
 #
 # Removes the flag wherever it appears in the BCC checkout. This is a small local patch
 # to make BCC Python binding installation compatible with pyenv Python.
-#
-echo "[5/8] Patching Debian-only --install-layout=deb (needed for pyenv CPython)..."
-if grep -R --line-number "install-layout=deb" . >/dev/null 2>&1; then
-  grep -R --line-number "install-layout=deb" . | awk -F: '{print $1}' | sort -u | \
-    xargs -r sed -i 's/--install-layout=deb//g'
+
+
+# This isnt going to work due failure condition of searching that will cause the whole script
+# to fail, patching offensing file directly
+#echo "[5/8] Patching Debian-only --install-layout deb (needed for pyenv CPython)..."
+#if grep -R --line-number "install-layout deb" . >/dev/null 2>&1; then
+#  grep -R --line-number "install-layout deb" . | awk -F: '{print $1}' | sort -u | \
+#    xargs -r sed -i 's/--install-layout deb//g'
+#fi
+echo "[5/8] Removing Debian-only --install-layout deb flag from BCC python install..."
+# I have to patch the offending file directly because of how grep can fail.
+PY_CMAKELISTS="$BCC_DIR/src/python/CMakeLists.txt"
+[[ -f "$PY_CMAKELISTS" ]] || die "Expected file not found: $PY_CMAKELISTS"
+
+# Remove either "--install-layout deb" or "--install-layout=deb" (with any spacing).
+sed -i -E 's/[[:space:]]+--install-layout(=|[[:space:]]+)deb//g' "$PY_CMAKELISTS"
+
+# Hard fail if it’s still present (prevents silent failure)
+if grep -nE -- '--install-layout(=|[[:space:]]+)deb' "$PY_CMAKELISTS" >/dev/null; then
+  die "Patch failed: --install-layout deb still present in $PY_CMAKELISTS"
 fi
 
 # -------------------- Step 6: Build and install BCC into the venv --------------------
@@ -222,8 +237,19 @@ make -j"$(nproc)"
 # Install into venv prefix (no sudo because prefix is under $HOME).
 cmake --install .
 
+# Build + install BCC Python bindings into the venv site-packages
+echo "[6.25/8] Building/installing BCC Python bindings into venv..."
+make -C "$BUILD_DIR/src/python" -j"$(nproc)"
+
+# Force it to use the venv python (works with most bcc Makefiles/CMake glue)
+PYTHON_CMD="$VENV_PY" PYTHON="$VENV_PY" make -C "$BUILD_DIR/src/python" install
+
+# Sanity check that the module is actually present now
+"$VENV_PY" -c "import bcc; print('bcc module at:', bcc.__file__)"
+
 # Verify bcc import in venv (may still fail before ldconfig if libbcc isn't in default loader paths)
-"$VENV_PY" -c "import bcc; from bcc import BPF; print('bcc python OK:', bcc.__file__)"
+# removing, is likely going to fail and stops script execution
+# "$VENV_PY" -c "import bcc; from bcc import BPF; print('bcc python OK:', bcc.__file__)"
 
 # NEW: make libbcc.so.0 resolvable for sudo/root without LD_LIBRARY_PATH
 if [[ "$DO_LDCONFIG" == "1" ]]; then
