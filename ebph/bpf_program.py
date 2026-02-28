@@ -22,20 +22,22 @@
     2020-Jul-13  William Findlay  Created this.
 """
 
+import json
 import os
 import sys
 import time
 import atexit
 import ctypes as ct
 from collections import defaultdict
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from bcc import BPF
 from ratelimit import limits
 
 from ebph.libebph import Lib
 from ebph.logger import get_logger
-from ebph.utils import running_processes
+#from ebph.utils import running_processes
+from ebph.utils import calculate_profile_key, calculate_scoped_profile_key, process_container_context, running_processes
 from ebph.structs import (
     EBPHProfileStruct,
     EBPH_SETTINGS,
@@ -73,7 +75,8 @@ class BPFProgram:
     """
     Wraps the BPF program and exposes methods for interacting with it.
     """
-    def __init__(self, debug: bool = False, log_sequences: bool = False, auto_save = True, auto_load = True):
+    #def __init__(self, debug: bool = False, log_sequences: bool = False, auto_save = True, auto_load = True):
+    def __init__(self, debug: bool = False, log_sequences: bool = False, auto_save = True, auto_load = True, scope_mode: defs.ScopeMode = defs.ScopeMode.HOST):
         self.bpf = None
         self.usdt_contexts = []
         self.seqstack_inner_bpf = None
@@ -85,8 +88,10 @@ class BPFProgram:
         self.debug = debug
         self.auto_save = auto_save
         self.auto_load = auto_load
+        self.scope_mode = defs.ScopeMode(scope_mode)
 
         self.profile_key_to_exe = defaultdict(lambda: '[unknown]')
+        self.profile_key_to_context: Dict[int, Dict[str, Optional[str]]] = defaultdict(dict)
         self.syscall_number_to_name = defaultdict(lambda: '[unknown]')
 
         self._set_cflags()
@@ -123,6 +128,30 @@ class BPFProgram:
             logger.error('Unable to bootstrap processes', exc_info=e)
 
         self.start_monitoring()
+
+
+    def _derive_profile_key(self, exe: str, context: Optional[Dict] = None) -> int:
+        context = context or {}
+        if self.scope_mode == defs.ScopeMode.CONTAINER:
+            return calculate_scoped_profile_key(exe, context.get('container_id'))
+        return calculate_profile_key(exe)
+
+    def _profile_meta_path(self, key: int) -> str:
+        return os.path.join(defs.EBPH_DATA_DIR, f'{key}.meta.json')
+
+    def _store_profile_context(self, profile_key: int, exe: str, context: Optional[Dict] = None) -> None:
+        self.profile_key_to_exe[profile_key] = exe
+        merged = dict(context or {})
+        merged.setdefault('scope_mode', self.scope_mode.value)
+        self.profile_key_to_context[profile_key] = merged
+
+    def _refresh_profile_context_from_pid(self, profile_key: int, pid: int) -> None:
+        context = process_container_context(pid)
+        if context:
+            self.profile_key_to_context[profile_key] = {**self.profile_key_to_context.get(profile_key, {}), **context, 'scope_mode': self.scope_mode.value}
+
+    def profile_keys_for_exe(self, exe: str) -> List[int]:
+        return sorted([k for k, v in self.profile_key_to_exe.items() if v == exe])
 
     def on_tick(self) -> None:
         """
@@ -218,6 +247,13 @@ class BPFProgram:
                 )
                 with open(os.path.join(defs.EBPH_DATA_DIR, fname), 'wb') as f:
                     f.write(profile)
+                with open(self._profile_meta_path(key), 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'profile_key': key,
+                        'exe': exe,
+                        'scope_mode': self.scope_mode.value,
+                        **self.profile_key_to_context.get(key, {}),
+                    }, f)               
                 logger.debug(f'Successfully saved profile {fname} ({exe}).')
             except Exception as e:
                 logger.error(
