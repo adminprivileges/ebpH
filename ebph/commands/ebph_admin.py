@@ -52,7 +52,8 @@ def command(name: str) -> Callable:
 @command('start')
 def start(args: Namespace) -> None:
     try:
-        subprocess.check_call(['ebphd', 'start'])
+        #subprocess.check_call(['ebphd', 'start'])
+        subprocess.check_call(['ebphd', 'start', '--scope-mode', args.scope_mode])
     except subprocess.CalledProcessError:
         fail_with('Failed to start the daemon. Check logs for more info.')
 
@@ -66,7 +67,8 @@ def stop(args: Namespace) -> None:
 @command('restart')
 def restart(args: Namespace) -> None:
     try:
-        subprocess.check_call(['ebphd', 'restart'])
+        #subprocess.check_call(['ebphd', 'restart'])
+        subprocess.check_call(['ebphd', 'restart', '--scope-mode', args.scope_mode])
     except subprocess.CalledProcessError:
         fail_with('Failed to restart the daemon. Check logs for more info.')
 

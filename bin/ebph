@@ -31,6 +31,7 @@ from typing import Callable, List, Union
 from pprint import pformat
 
 from ebph.structs import EBPH_SETTINGS
+from ebph import defs
 
 commands = {}
 
@@ -125,6 +126,8 @@ def parse_args(sys_args: List[str]):
         'have root privileges to do this. For more advanced options, '
         'consider using ebphd instead.',
     )
+    start.add_argument('--scope-mode', choices=[m.value for m in defs.ScopeMode], default=defs.ScopeMode.HOST.value,
+        help='Scope mode used by daemon profile keys.')
 
     stop = admin_commands.add_parser(
         'stop',
@@ -139,6 +142,9 @@ def parse_args(sys_args: List[str]):
         'have root privileges to do this. For more advanced options, '
         'consider using ebphd instead.',
     )
+    restart.add_argument('--scope-mode', choices=[m.value for m in defs.ScopeMode], default=defs.ScopeMode.HOST.value,
+        help='Scope mode used by daemon profile keys.')
+
 
     save = admin_commands.add_parser(
         'save',
