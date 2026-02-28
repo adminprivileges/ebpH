@@ -52,6 +52,7 @@ class EBPHDaemon(DaemonMixin):
         self.log_sequences = args.log_sequences
         self.auto_save = not args.nosave
         self.auto_load = not args.noload
+        self.scope_mode = args.scope_mode
 
     def tick(self) -> None:
         """
@@ -88,7 +89,8 @@ class EBPHDaemon(DaemonMixin):
         from ebph.bpf_program import BPFProgram
         self.bpf_program = BPFProgram(debug=self.debug,
                 log_sequences=self.log_sequences, auto_save=self.auto_save,
-                auto_load=self.auto_load)
+                #auto_load=self.auto_load)
+                auto_load=self.auto_load, scope_mode=self.scope_mode)
         global bpf_program
         bpf_program = self.bpf_program
 
@@ -123,6 +125,10 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
             help=f"Don't load profiles.")
     parser.add_argument('--debug', action='store_true',
             help=f"Run in debug mode. Side effect: sets verbosity level to debug regardless of what is set in configuration options.")
+    parser.add_argument('--scope-mode', dest='scope_mode', choices=[m.value for m in defs.ScopeMode],
+            default=defs.ScopeMode.HOST.value,
+            help='Scope mode used for profile keys (host or container).')
+
     # Quick testing mode. This option sets --nodaemon --nolog --nosave --noload flags.
     parser.add_argument('--testing', action='store_true',
             help=argparse.SUPPRESS)
@@ -135,6 +141,9 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
         args.nolog = True
         args.nosave = True
         args.noload = True
+
+    #setting the scope via the system arguments here
+    args.scope_mode = defs.ScopeMode(args.scope_mode)
 
     # Check for root
     if not (os.geteuid() == 0):

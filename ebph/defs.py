@@ -23,6 +23,7 @@
 
 import os
 from argparse import Namespace
+from enum import Enum
 
 from ebph.utils import project_path
 
@@ -96,6 +97,10 @@ PROFILE_SAVE_INTERVAL = 10000
 
 TICK_SLEEP = 0.1
 
+class ScopeMode(str,Enum):
+    HOST = 'host'
+    CONTAINER = 'container'
+    
 
 def init(args: Namespace) -> None:
     """
