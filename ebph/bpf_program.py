@@ -279,6 +279,9 @@ class BPFProgram:
             self.stop_monitoring()
 
         for fname in os.listdir(defs.EBPH_DATA_DIR):
+            if fname.endswith('.meta.json'):
+                continue
+
             try:
                 profile = EBPHProfileStruct()
                 with open(os.path.join(defs.EBPH_DATA_DIR, fname), 'rb') as f:
@@ -288,8 +291,18 @@ class BPFProgram:
                     logger.debug(f'Wrong magic number for profile {fname}, skipping.')
                     continue
                 profile.load_into_bpf(self.bpf)
-                self.profile_key_to_exe[profile.profile_key] = profile.exe.decode('ascii')
-                exe = self.profile_key_to_exe[profile.profile_key]
+                #self.profile_key_to_exe[profile.profile_key] = profile.exe.decode('ascii')
+                #exe = self.profile_key_to_exe[profile.profile_key]
+                exe = profile.exe.decode('ascii')
+                meta_path = self._profile_meta_path(profile.profile_key)
+                context = {}
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path, 'r', encoding='utf-8') as mf:
+                            context = json.load(mf)
+                    except Exception:
+                        context = {}
+                self._store_profile_context(profile.profile_key, exe, context)
                 logger.debug(f'Successfully loaded profile {fname} ({exe}).')
             except Exception as e:
                 logger.error(f'Unable to load profile {fname}.', exc_info=e)
@@ -437,7 +450,8 @@ class BPFProgram:
                 pass
             except Exception:
                 pass
-            self.profile_key_to_exe[event.profile_key] = pathname
+            #self.profile_key_to_exe[event.profile_key] = pathname
+            self._store_profile_context(event.profile_key, pathname, self.profile_key_to_context.get(event.profile_key, {}))
 
             if self.debug:
                 logger.info(
@@ -459,6 +473,7 @@ class BPFProgram:
             misses = event.misses
             pid = event.pid
             count = event.task_count
+            self._refresh_profile_context_from_pid(event.profile_key, pid)
 
             logger.audit(
                 f'Anomalous {name} ({misses} misses) '
@@ -482,6 +497,7 @@ class BPFProgram:
             ]
             sequence = reversed(sequence)
             pid = event.pid
+            self._refresh_profile_context_from_pid(event.profile_key, pid)
             profile_count = event.profile_count
             task_count = event.task_count
 
@@ -506,6 +522,7 @@ class BPFProgram:
             in_task = event.in_task
             task_count = event.task_count
             pid = event.pid
+            self._refresh_profile_context_from_pid(event.profile_key, pid)
 
             if in_task:
                 logger.info(
@@ -542,7 +559,8 @@ class BPFProgram:
             in_task = event.in_task
             task_count = event.task_count
             pid = event.pid
-
+            self._refresh_profile_context_from_pid(event.profile_key, pid)
+            
             if in_task:
                 logger.info(
                     f'Stopped normal monitoring in PID {pid} ({exe}) '
@@ -565,6 +583,7 @@ class BPFProgram:
             profile_key = event.profile_key
             pid = event.pid
             lfc = event.lfc
+            self._refresh_profile_context_from_pid(profile_key, pid)
             exe = self.profile_key_to_exe[profile_key]
 
             logger.info(f'Tolerize limit exceeded for PID {pid} ({exe}), LFC is {lfc}. Training data reset.')
@@ -584,7 +603,10 @@ class BPFProgram:
         return int(boot_epoch)
 
     def _bootstrap_processes(self):
-        for profile_key, exe, pid, tid in running_processes():
+        #for profile_key, exe, pid, tid in running_processes():
+            for _host_profile_key, exe, pid, tid, context in running_processes():
+            profile_key = self._derive_profile_key(exe, context)
+            self._store_profile_context(profile_key, exe, context)
             logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key})')
             Lib.bootstrap_process(profile_key, tid, pid, exe.encode('ascii'))
             self.bpf.ring_buffer_consume()
