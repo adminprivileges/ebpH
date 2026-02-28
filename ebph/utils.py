@@ -21,10 +21,12 @@
     2020-Jul-13  William Findlay  Created this.
 """
 
+import hashlib
 import os
+import re
 import sys
 from datetime import datetime, timedelta
-from typing import Callable, Iterator, Union, Tuple
+from typing import Callable, Dict, Iterator, Optional, Union, Tuple
 
 from proc.core import find_processes
 import requests
@@ -83,6 +85,84 @@ def calculate_profile_key(fpath: str) -> int:
     st_ino = s.st_ino
     return st_dev << 32 | st_ino
 
+def hash_to_u64(parts: Tuple[Union[str, int], ...]) -> int:
+    h = hashlib.blake2b(digest_size=8)
+    for part in parts:
+        h.update(str(part).encode('utf-8'))
+        h.update(b'\0')
+    return int.from_bytes(h.digest(), byteorder='big', signed=False)
+
+
+def calculate_scoped_profile_key(fpath: str, container_id: Optional[str] = None) -> int:
+    if not container_id:
+        return calculate_profile_key(fpath)
+    s = os.stat(fpath)
+    return hash_to_u64((container_id, s.st_dev, s.st_ino))
+
+
+def _read_proc_file(pid: int, path: str) -> Optional[str]:
+    try:
+        with open(f'/proc/{pid}/{path}', 'r', encoding='utf-8') as f:
+            return f.read()
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        return None
+
+
+def read_cgroup_namespace_inode(pid: int) -> Optional[int]:
+    try:
+        link = os.readlink(f'/proc/{pid}/ns/cgroup')
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        return None
+    m = re.match(r'cgroup:\[(\d+)\]', link)
+    if not m:
+        return None
+    return int(m.group(1))
+
+
+def read_cgroup_path(pid: int) -> Optional[str]:
+    content = _read_proc_file(pid, 'cgroup')
+    if not content:
+        return None
+    for line in content.splitlines():
+        parts = line.split(':', 2)
+        if len(parts) != 3:
+            continue
+        path = parts[2].strip()
+        if path:
+            return path
+    return None
+
+
+def derive_container_id(cgroup_path: Optional[str], cgroup_ns_inode: Optional[int] = None) -> Optional[str]:
+    if cgroup_path:
+        matches = re.findall(r'([0-9a-f]{64}|[0-9a-f]{32}|[0-9a-f]{12})', cgroup_path, flags=re.IGNORECASE)
+        if matches:
+            return matches[-1].lower()
+
+        kube_match = re.search(r'pod([0-9a-f-]{32,36})', cgroup_path, flags=re.IGNORECASE)
+        if kube_match:
+            return kube_match.group(1).replace('_', '-').lower()
+
+        suffix = cgroup_path.rsplit('/', 1)[-1]
+        if suffix and suffix not in ('', '/', 'user.slice', 'system.slice', 'init.scope'):
+            return suffix
+
+    if cgroup_ns_inode and cgroup_ns_inode != read_cgroup_namespace_inode(1):
+        return f'cgroupns-{cgroup_ns_inode}'
+
+    return None
+
+
+def process_container_context(pid: int) -> Dict[str, Optional[Union[str, int]]]:
+    cgroup_ns_inode = read_cgroup_namespace_inode(pid)
+    cgroup_path = read_cgroup_path(pid)
+    container_id = derive_container_id(cgroup_path, cgroup_ns_inode)
+    return {
+        'container_id': container_id,
+        'cgroup_path': cgroup_path,
+        'cgroup_ns_inode': cgroup_ns_inode,
+    }
+
 def fail_with(err: str) -> None:
     print(err, file=sys.stderr)
     sys.exit(-1)
@@ -108,10 +188,11 @@ def request_or_die(req_method: Callable, url: str, fail_message:str = 'Operation
     except requests.ConnectionError:
         fail_with('Unable to connect to ebpH daemon!')
 
-def running_processes() -> Iterator[Tuple[int, str, int, int]]:
+#def running_processes() -> Iterator[Tuple[int, str, int, int]]:
+def running_processes() -> Iterator[Tuple[int, str, int, int, Dict[str, Optional[Union[str, int]]]]]:
     """
     Returns an interator of all processes running on the
-    system. Iterator contains tuples of [@profile_key, @exe, @pid, @tid]
+    system. Iterator contains tuples of [@profile_key, @exe, @pid, @tid, @context]
     """
     for p in find_processes():
         exe = p.exe
@@ -119,8 +200,10 @@ def running_processes() -> Iterator[Tuple[int, str, int, int]]:
         tid = p.pid
         if not exe:
             continue
+        context = process_container_context(tid)
         try:
             profile_key = calculate_profile_key(exe)
         except Exception:
             continue
-        yield (profile_key, exe, pid, tid)
+        #yield (profile_key, exe, pid, tid)
+        yield (profile_key, exe, pid, tid, context)
