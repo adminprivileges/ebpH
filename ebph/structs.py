@@ -45,8 +45,9 @@ def calculate_profile_magic() -> int:
 
     # take x.x part of version
     version = '.'.join(__version__.split('.')[:2]).encode('ascii')
+    scope = defs.PROFILE_SCOPE.encode('ascii')
 
-    return int(sha256(version).hexdigest(), 16) & 0xFFFF_FFFF_FFFF_FFFF
+    return int(sha256(version + b':' + scope).hexdigest(), 16) & 0xFFFF_FFFF_FFFF_FFFF
 
 
 @unique
