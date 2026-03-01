@@ -560,6 +560,12 @@ class BPFProgram:
         for k, v in defs.BPF_DEFINES.items():
             self.cflags.append(f'-D{k}={v}')
 
+        if defs.PROFILE_SCOPE == defs.PROFILE_SCOPE_CONTAINER:
+            self.cflags.append('-DEBPH_PROFILE_SCOPE_CONTAINER=1')
+        else:
+            self.cflags.append('-DEBPH_PROFILE_SCOPE_CONTAINER=0')
+        logger.info(f'Using profile scope: {defs.PROFILE_SCOPE}.')
+
         if self.debug:
             self.cflags.append('-DEBPH_DEBUG')
 
