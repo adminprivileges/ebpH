@@ -47,7 +47,9 @@ The following is a bootstrap script created to install and run the tool. It has 
 - installs ebpH and systemd service.
 
 ```bash
-bash scripts/bootstrap.sh
+git clone https://github.com/adminprivileges/ebpH.git
+cd ebpH
+bash ./scripts/bootstrap.sh
 ```
 
 ## Advanced/Manual Setup
