@@ -179,9 +179,15 @@ class API:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        #rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        keys = API.bpf_program.profile_keys_for_exe(exe)
         try:
-            return API.normalize_profile_by_key(rev[exe])
+            #return API.normalize_profile_by_key(rev[exe])
+            if not keys:
+                raise KeyError(exe)
+            if len(keys) > 1:
+                raise HTTPException(HTTPStatus.CONFLICT, f'Multiple profiles exist for {exe}. Use /profiles/key/{{key}} endpoints.')
+            return API.normalize_profile_by_key(keys[0])
         except KeyError as e:
             raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
         except Exception as e:
@@ -224,9 +230,15 @@ class API:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        #rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        keys = API.bpf_program.profile_keys_for_exe(exe)
         try:
-            return API.sensitize_profile_by_key(rev[exe])
+            #return API.sensitize_profile_by_key(rev[exe])
+            if not keys:
+                raise KeyError(exe)
+            if len(keys) > 1:
+                raise HTTPException(HTTPStatus.CONFLICT, f'Multiple profiles exist for {exe}. Use /profiles/key/{{key}} endpoints.')
+            return API.sensitize_profile_by_key(keys[0])
         except KeyError as e:
             raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
         except Exception as e:
@@ -269,9 +281,15 @@ class API:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        #rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
+        keys = API.bpf_program.profile_keys_for_exe(exe)
         try:
-            return API.tolerize_profile_by_key(rev[exe])
+            #return API.tolerize_profile_by_key(rev[exe])
+            if not keys:
+                raise KeyError(exe)
+            if len(keys) > 1:
+                raise HTTPException(HTTPStatus.CONFLICT, f'Multiple profiles exist for {exe}. Use /profiles/key/{{key}} endpoints.')
+            return API.tolerize_profile_by_key(keys[0])
         except KeyError as e:
             raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
         except Exception as e:
