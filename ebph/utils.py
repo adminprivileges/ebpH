@@ -77,11 +77,22 @@ def which(program: str) -> Union[str, None]:
 
      return None
 
-def calculate_profile_key(fpath: str) -> int:
+def calculate_profile_key(fpath: str, tid: int = 0) -> int:
+    from ebph import defs
+
     s = os.stat(fpath)
     st_dev = s.st_dev
     st_ino = s.st_ino
-    return st_dev << 32 | st_ino
+    profile_key = st_dev << 32 | st_ino
+
+    if defs.PROFILE_SCOPE == defs.PROFILE_SCOPE_CONTAINER:
+        try:
+            pid_ns_inode = os.stat(f'/proc/{tid}/ns/pid').st_ino
+            profile_key ^= (pid_ns_inode << 32 | pid_ns_inode)
+        except Exception:
+            pass
+
+    return profile_key
 
 def fail_with(err: str) -> None:
     print(err, file=sys.stderr)
@@ -120,7 +131,7 @@ def running_processes() -> Iterator[Tuple[int, str, int, int]]:
         if not exe:
             continue
         try:
-            profile_key = calculate_profile_key(exe)
+            profile_key = calculate_profile_key(exe, tid=tid)
         except Exception:
             continue
         yield (profile_key, exe, pid, tid)
