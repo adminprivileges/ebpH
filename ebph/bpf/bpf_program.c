@@ -47,6 +47,32 @@ static __always_inline int ebph_set_setting(int key, u64 val)
     return _ebph_settings.update(&key, &val);
 }
 
+static __always_inline u64 ebph_calculate_profile_key(struct inode *inode)
+{
+    u64 profile_key = (u64)inode->i_ino | ((u64)new_encode_dev(inode->i_sb->s_dev) << 32);
+
+#if EBPH_PROFILE_SCOPE_CONTAINER
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    struct nsproxy *nsproxy = NULL;
+    struct pid_namespace *pid_ns = NULL;
+    u32 pid_ns_inum = 0;
+
+    if (task) {
+        bpf_probe_read_kernel(&nsproxy, sizeof(nsproxy), &task->nsproxy);
+    }
+    if (nsproxy) {
+        bpf_probe_read_kernel(&pid_ns, sizeof(pid_ns), &nsproxy->pid_ns_for_children);
+    }
+    if (pid_ns) {
+        bpf_probe_read_kernel(&pid_ns_inum, sizeof(pid_ns_inum), &pid_ns->ns.inum);
+    }
+
+    profile_key ^= ((u64)pid_ns_inum << 32) | (u64)pid_ns_inum;
+#endif
+
+    return profile_key;
+}
+
 /* =========================================================================
  * Maps
  * =========================================================================
@@ -390,12 +416,8 @@ LSM_PROBE(bprm_check_security, struct linux_binprm *bprm)
         return 0;
     }
 
-    /* Calculate profile_key by taking inode number and filesystem device
-     * number together */
-    u64 profile_key =
-        (u64)bprm->file->f_path.dentry->d_inode->i_ino |
-        ((u64)new_encode_dev(bprm->file->f_path.dentry->d_inode->i_sb->s_dev)
-         << 32);
+    u64 profile_key = ebph_calculate_profile_key(
+        bprm->file->f_path.dentry->d_inode);
 
     u32 pid  = bpf_get_current_pid_tgid();
     u32 tgid = bpf_get_current_pid_tgid() >> 32;
