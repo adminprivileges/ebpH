@@ -96,6 +96,11 @@ PROFILE_SAVE_INTERVAL = 10000
 
 TICK_SLEEP = 0.1
 
+PROFILE_SCOPE_HOST = 'host'
+PROFILE_SCOPE_CONTAINER = 'container'
+PROFILE_SCOPES = (PROFILE_SCOPE_HOST, PROFILE_SCOPE_CONTAINER)
+PROFILE_SCOPE = PROFILE_SCOPE_HOST
+
 
 def init(args: Namespace) -> None:
     """
@@ -104,6 +109,9 @@ def init(args: Namespace) -> None:
     # Set log file location
     global LOGFILE
     LOGFILE = os.path.join(LOG_DIR, 'ebph.log')
+
+    global PROFILE_SCOPE
+    PROFILE_SCOPE = getattr(args, 'scope', PROFILE_SCOPE_HOST)
 
     # Make working_directory or set permissions of existing working_directory
     try:
