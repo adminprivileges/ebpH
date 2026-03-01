@@ -25,60 +25,68 @@ This product comes with no warranty, and is built as a research system. It shoul
 - [Lightweight Intrustion Detection for Networked Operating Systems](http://people.scs.carleton.ca/~soma/pubs/jcs1998.pdf)
 - [Lookahead Pairs and Full Sequences: A Tale of Two Anomaly Detection Methods](http://people.scs.carleton.ca/~soma/pubs/inoue-albany2007.pdf)
 
-## Prerequisites
+## Requirements / Environment
 
-1. Linux 5.8+ compiled with at least `CONFIG_BPF=y`, `CONFIG_BPF_SYSCALL=y`, `CONFIG_BPF_JIT=y`, `CONFIG_TRACEPOINTS=y`, `CONFIG_BPF_LSM=y`, `CONFIG_DEBUG_INFO=y`, `CONFIG_DEBUG_INFO_BTF=y`, `CONFIG_LSM="bpf"`. pahole >= 0.16 must be installed for the kernel to be built with BTF info.
-1. Either the latest version of bcc from https://github.com/iovisor/bcc or bcc version 0.16+.
-    - If building from source, be sure to include `-DPYTHON_CMD=python3` in your the cmake flags
-1. Python 3.8+
+1. Linux 5.8+ compiled with at least `CONFIG_BPF=y`, `CONFIG_BPF_SYSCALL=y`, `CONFIG_BPF_JIT=y`, `CONFIG_TRACEPOINTS=y`, `CONFIG_BPF_LSM=y`, `CONFIG_DEBUG_INFO=y`, `CONFIG_DEBUG_INFO_BTF=y`, `CONFIG_LSM="bpf"`. 
+    - without these, your OS will not see BPF as a useable LSM
+1. `pahole >= 0.16` 
+    - must be installed for the kernel to be built with BTF info.
+1. `bcc` version 0.16+.
+    - If building from source, be sure to include `-DPYTHON_CMD=python3` (or your python virtual environment) in your the cmake flags
+1. `Python 3.8`
+    - Only tested on `python 3.9`, `python 3.9` and newer may work, but have a high chance of failing while building pip packages due to strict version requirements.  
 
 ## Installation
 
-<details>
-<summary> <h2>Makefile install</h2></summary>
-<h3>0. Initial Setup</h3>
-<pre><code>
-git clone https://github.com/adminprivileges/ebpH.git
-cd ebpH
-sudo apt install make</code></pre>
-<h3> 1. One-time dependencies </h3>
-<pre><code>
-make deps-apt
-make pyenv-install
-</code></pre>
-<h3> 2. Open a new shell after updating your shell init for pyenv </h3>
-<pre><code>
-bash
-</code></pre>
-<h3> 3. Create Python 3.8 venv </h3>
-<pre><code>
-make pyenv-venv
-make venv-check
-</code></pre>
-<h3> 4. Build and install BCC into the venv </h3>
-<pre><code>
-make install-cli
-make bcc-build
-</code></pre>
-<h3> 5. Install ebpH into the venv </h3>
-<pre><code>
-make install
-</code></pre>
-<h3> 6. Install systemd service </h3>
-<pre><code>
-make systemd-install
-make status
-make logs
-</code></pre>
-</details>
-<details>
-<summary> <h2>Automated Install (under construction) </h2></summary>
-<h3> 1. Run Bootstrap Script </h3>
-<pre><code>
-bash ./script/bootstrap.sh
-</code></pre>
-</details>
+## Default Setup
+The following is a bootstrap script created to install and run the tool. It has only been tested on Ubuntu 22.04.03LTS
+### What it does:
+- installs pyenv and a virtualenv for python 3.8,
+- builds BCC into that venv,
+- patches BCC --install-layout incompatibility,
+- installs ebpH and systemd service.
 
+```bash
+bash scripts/bootstrap.sh
+```
+
+## Advanced/Manual Setup
+0. Initial Setup
+    ```bash 
+    git clone https://github.com/adminprivileges/ebpH.git
+    cd ebpH
+    sudo apt install make
+    ```
+1. One-time dependencies
+    ```bash
+    make deps-apt
+    make pyenv-install
+    ```
+
+2. Open a new shell after updating your shell init for pyenv
+    ```bash
+    bash
+    ```
+3. Create Python 3.8 venv
+    ```bash
+    make pyenv-venv
+    make venv-check
+    ```
+4. Build and install BCC into the venv
+    ```bash
+    make install-cli
+    make bcc-build
+    ```
+5. Install ebpH into the venv
+    ```bash
+    make install
+    ```
+6. Install systemd service
+    ```bash
+    make systemd-install
+    make status
+    make logs
+    ```
 
 ## How to Use / Examples
 
