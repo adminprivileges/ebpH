@@ -123,6 +123,9 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
             help=f"Don't load profiles.")
     parser.add_argument('--debug', action='store_true',
             help=f"Run in debug mode. Side effect: sets verbosity level to debug regardless of what is set in configuration options.")
+    parser.add_argument('--scope', choices=defs.PROFILE_SCOPES,
+            default=defs.PROFILE_SCOPE_HOST,
+            help=f"Profile identity scope. Choices are: {', '.join(defs.PROFILE_SCOPES)}.")
     # Quick testing mode. This option sets --nodaemon --nolog --nosave --noload flags.
     parser.add_argument('--testing', action='store_true',
             help=argparse.SUPPRESS)
