@@ -239,6 +239,16 @@ cmake --install .
 
 # Build + install BCC Python bindings into the venv site-packages
 echo "[6.25/8] Building/installing BCC Python bindings into venv..."
+
+# NEW: make libbcc.so.0 resolvable for sudo/root without LD_LIBRARY_PATH
+if [[ "$DO_LDCONFIG" == "1" ]]; then
+  echo "[6.5/8] Registering venv libs with ld.so (ldconfig)..."
+  echo "$VENV_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/ebph-bcc-pyenv.conf >/dev/null
+  sudo ldconfig
+  ldconfig -p | grep -E 'libbcc\.so' >/dev/null || die "ldconfig did not register libbcc"
+fi
+
+
 make -C "$BUILD_DIR/src/python" -j"$(nproc)"
 
 # Force it to use the venv python (works with most bcc Makefiles/CMake glue)
@@ -250,14 +260,6 @@ PYTHON_CMD="$VENV_PY" PYTHON="$VENV_PY" make -C "$BUILD_DIR/src/python" install
 # Verify bcc import in venv (may still fail before ldconfig if libbcc isn't in default loader paths)
 # removing, is likely going to fail and stops script execution
 # "$VENV_PY" -c "import bcc; from bcc import BPF; print('bcc python OK:', bcc.__file__)"
-
-# NEW: make libbcc.so.0 resolvable for sudo/root without LD_LIBRARY_PATH
-if [[ "$DO_LDCONFIG" == "1" ]]; then
-  echo "[6.5/8] Registering venv libs with ld.so (ldconfig)..."
-  echo "$VENV_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/ebph-bcc-pyenv.conf >/dev/null
-  sudo ldconfig
-  ldconfig -p | grep -E 'libbcc\.so' >/dev/null || die "ldconfig did not register libbcc"
-fi
 
 # Re-test import after ldconfig
 "$VENV_PY" -c "from bcc import BPF; print('bcc OK (post-ldconfig)')"
