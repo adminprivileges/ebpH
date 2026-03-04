@@ -52,6 +52,12 @@ cd ebpH
 bash ./scripts/bootstrap.sh
 ```
 
+For CI/containerized environments (for example, where commands run as root and systemd is offline), run:
+
+```bash
+ALLOW_ROOT=1 DO_SYSTEMD=0 bash ./scripts/bootstrap.sh
+```
+
 ## Advanced/Manual Setup
 0. Initial Setup
     ```bash 

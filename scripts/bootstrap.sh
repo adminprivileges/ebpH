@@ -68,6 +68,8 @@ EBPH_EDITABLE="${EBPH_EDITABLE:-0}"
 
 DO_LDCONFIG="${DO_LDCONFIG:-1}"
 DO_SYMLINKS="${DO_SYMLINKS:-1}"
+DO_SYSTEMD="${DO_SYSTEMD:-1}"
+ALLOW_ROOT="${ALLOW_ROOT:-0}"
 
 # Determine repository root based on this script location.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,7 +83,10 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $
 
 # Safety: do not run as root; we only use sudo when needed.
 if [[ "$(id -u)" -eq 0 ]]; then
-  die "Do not run as root. Run as your normal user with sudo privileges."
+  if [[ "$ALLOW_ROOT" != "1" ]]; then
+    die "Do not run as root. Run as your normal user with sudo privileges. Set ALLOW_ROOT=1 to override in CI/container environments."
+  fi
+  echo "[bootstrap] ALLOW_ROOT=1 set; continuing as root."
 fi
 
 # Basic tools that must exist before we start.
@@ -298,10 +303,16 @@ fi
 #   LD_LIBRARY_PATH to include venv lib
 #   LimitMEMLOCK=infinity (the internet said i needed this)
 #
-echo "[8/8] Installing systemd service: ${SERVICE_NAME}.service"
-SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
+if [[ "$DO_SYSTEMD" == "1" ]]; then
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "[8/8] Skipping systemd setup because systemctl is unavailable (set DO_SYSTEMD=0 to suppress this message)."
+  elif [[ "$(systemctl is-system-running 2>/dev/null || true)" == "offline" ]]; then
+    echo "[8/8] Skipping systemd setup because systemd is offline in this environment (set DO_SYSTEMD=0 to suppress this message)."
+  else
+    echo "[8/8] Installing systemd service: ${SERVICE_NAME}.service"
+    SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 
-sudo tee "$SERVICE_PATH" >/dev/null <<EOF
+    sudo tee "$SERVICE_PATH" >/dev/null <<EOF
 [Unit]
 Description=ebpH daemon (pyenv Python ${PYTHON_VERSION})
 After=network.target
@@ -335,8 +346,12 @@ Group=root
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable --now "${SERVICE_NAME}.service"
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now "${SERVICE_NAME}.service"
+  fi
+else
+  echo "[8/8] Skipping systemd setup because DO_SYSTEMD=0."
+fi
 
 # -------------------- Final summary --------------------
 echo
