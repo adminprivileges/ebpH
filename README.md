@@ -99,9 +99,20 @@ ALLOW_ROOT=1 DO_SYSTEMD=0 bash ./scripts/bootstrap.sh
 ## How to Use / Examples
 
 1. Run `$ sudo ebphd start` to start the daemon.
+   - Host-compatible mode (default): `$ sudo ebphd start` or `$ sudo ebphd --scope-mode host start`
+   - Container-aware mode: `$ sudo ebphd --scope-mode container start`
 1. Run `$ sudo ebph admin status` to check daemon status.
 1. Run `$ sudo ebph ps` to check monitored processes.
 1. Run `$ sudo ebph ps -p` to list all active profiles.
+
+### Scope modes
+
+ebpH supports two profiling scope modes:
+
+- `host` (default): preserves historical executable-centric behavior. Profile identity remains compatible with legacy host-wide behavior.
+- `container`: profile identity becomes scope-aware and is computed from `(scope_id, executable_identity)`, where `scope_id` is derived from cgroup identity in-kernel.
+
+In container mode, the same executable can have distinct profiles across different container scopes. Profile and process output includes `scope_id` to support research comparisons and anomaly-rate analysis by scope.
 
 Or, with systemd:
 

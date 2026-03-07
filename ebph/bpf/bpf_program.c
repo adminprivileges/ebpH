@@ -58,6 +58,12 @@ BPF_HASH(task_states, u32, struct ebph_task_state_t, EBPH_MAX_PROCESSES);
 /* Profile Key -> Profile */
 BPF_HASH(profiles, u64, struct ebph_profile_t, EBPH_MAX_PROFILES);
 
+/* Profile Key -> Scope ID */
+BPF_HASH(profile_scope_ids, u64, u64, EBPH_MAX_PROFILES);
+
+/* Profile Key -> Executable Identity */
+BPF_HASH(profile_executable_keys, u64, u64, EBPH_MAX_PROFILES);
+
 /* Profile Key -> Syscall Flags */
 BPF_F_TABLE("hash", u64, struct ebph_flags_t, training_data, EBPH_MAX_PROFILES,
             BPF_F_NO_PREALLOC);
@@ -98,12 +104,13 @@ static __always_inline struct ebph_alf_t *ebph_new_alf()
 /* Profile creation events */
 struct ebph_new_profile_event_t {
     u64 profile_key;
+    u64 scope_id;
     char pathname[PATH_MAX];
 };
 
 BPF_RINGBUF_OUTPUT(new_profile_events, 16);
 
-static __always_inline void ebph_log_new_profile(u64 profile_key,
+static __always_inline void ebph_log_new_profile(u64 profile_key, u64 scope_id,
                                                  const char *pathname)
 {
     struct ebph_new_profile_event_t *event = new_profile_events.ringbuf_reserve(
@@ -111,6 +118,7 @@ static __always_inline void ebph_log_new_profile(u64 profile_key,
     if (event) {
         bpf_probe_read_str(event->pathname, sizeof(event->pathname), pathname);
         event->profile_key = profile_key;
+        event->scope_id = scope_id;
         new_profile_events.ringbuf_submit(event, BPF_RB_FORCE_WAKEUP);
     }
 }
@@ -121,6 +129,7 @@ struct ebph_anomaly_event_t {
     int misses;
     u32 pid;
     u64 profile_key;
+    u64 scope_id;
     u64 task_count;
 };
 
@@ -136,6 +145,7 @@ static __always_inline void ebph_log_anomaly(u16 syscall, int misses,
         event->misses      = misses;
         event->pid         = s->pid;
         event->profile_key = s->profile_key;
+        event->scope_id    = s->scope_id;
         event->task_count  = s->count;
         anomaly_events.ringbuf_submit(event, BPF_RB_FORCE_WAKEUP);
     }
@@ -145,6 +155,7 @@ static __always_inline void ebph_log_anomaly(u16 syscall, int misses,
 struct ebph_new_sequence_event_t {
     u32 pid;
     u64 profile_key;
+    u64 scope_id;
     u64 profile_count;
     u64 task_count;
     u16 sequence[EBPH_SEQLEN];
@@ -162,6 +173,7 @@ static __always_inline void ebph_log_new_sequence(struct ebph_task_state_t *s,
     if (event) {
         event->pid           = s->pid;
         event->profile_key   = s->profile_key;
+        event->scope_id      = s->scope_id;
         event->profile_count = p->count;
         event->task_count    = s->count;
         bpf_probe_read(event->sequence, sizeof(event->sequence), seq->calls);
@@ -173,6 +185,7 @@ static __always_inline void ebph_log_new_sequence(struct ebph_task_state_t *s,
 struct ebph_start_normal_event_t {
     u32 pid;
     u64 profile_key;
+    u64 scope_id;
     u64 profile_count;
     u64 task_count;
     u64 sequences;
@@ -199,6 +212,7 @@ static __always_inline void ebph_log_start_normal(u64 profile_key,
             event->in_task = 0;
         }
         event->profile_key    = profile_key;
+        event->scope_id       = s ? s->scope_id : 0;
         event->profile_count  = p->count;
         event->train_count    = p->train_count;
         event->last_mod_count = p->last_mod_count;
@@ -211,6 +225,7 @@ static __always_inline void ebph_log_start_normal(u64 profile_key,
 struct ebph_stop_normal_event_t {
     u32 pid;
     u64 profile_key;
+    u64 scope_id;
     u64 task_count;
     u64 anomalies;
     u64 anomaly_limit;
@@ -234,6 +249,7 @@ static __always_inline void ebph_log_stop_normal(u64 profile_key,
             event->in_task = 0;
         }
         event->profile_key   = profile_key;
+        event->scope_id      = s ? s->scope_id : 0;
         event->anomalies     = p->anomaly_count;
         event->anomaly_limit = ebph_get_setting(EBPH_SETTING_ANOMALY_LIMIT);
         stop_normal_events.ringbuf_submit(event, BPF_RB_FORCE_WAKEUP);
@@ -242,6 +258,7 @@ static __always_inline void ebph_log_stop_normal(u64 profile_key,
 
 struct ebph_tolerize_limit_event_t {
     u64 profile_key;
+    u64 scope_id;
     u32 pid;
     u8 lfc;
 };
@@ -256,6 +273,7 @@ static __always_inline void ebph_log_tolerize_limit(struct ebph_task_state_t *s,
             sizeof(struct ebph_tolerize_limit_event_t));
     if (event) {
         event->profile_key = s->profile_key;
+        event->scope_id    = s->scope_id;
         event->pid         = s->pid;
         event->lfc         = s->total_lfc;
         tolerize_limit_events.ringbuf_submit(event, BPF_RB_FORCE_WAKEUP);
@@ -266,12 +284,26 @@ static __always_inline void ebph_log_tolerize_limit(struct ebph_task_state_t *s,
  * LSM Programs
  * ========================================================================= */
 
-static __always_inline int ebph_do_exec_common(u64 profile_key, u32 pid,
+static __always_inline u64 ebph_current_scope_id()
+{
+    if (EBPH_SCOPE_MODE == EBPH_SCOPE_MODE_CONTAINER) {
+        return bpf_get_current_cgroup_id();
+    }
+    return 0;
+}
+
+static __always_inline u64 ebph_compose_profile_key(u64 scope_id, u64 executable_key)
+{
+    return executable_key ^ (scope_id * 0x9e3779b97f4a7c15ULL);
+}
+
+static __always_inline int ebph_do_exec_common(u64 profile_key, u64 scope_id,
+                                               u64 executable_key, u32 pid,
                                                u32 tgid, const char *pathname)
 {
     /* Create or look up task_state. */
     struct ebph_task_state_t *task_state =
-        ebph_new_task_state(pid, tgid, profile_key);
+        ebph_new_task_state(pid, tgid, profile_key, scope_id, executable_key);
     if (!task_state) {
         // TODO: log error
         return 1;
@@ -280,7 +312,7 @@ static __always_inline int ebph_do_exec_common(u64 profile_key, u32 pid,
     // Does the profile already exist? Important for logging purposes
     u8 profile_exists = profiles.lookup(&profile_key) ? 1 : 0;
 
-    struct ebph_profile_t *profile = ebph_new_profile(profile_key, pathname);
+    struct ebph_profile_t *profile = ebph_new_profile(profile_key, scope_id, executable_key, pathname);
     if (!profile) {
         // TODO: log error
         return 1;
@@ -303,6 +335,8 @@ static __always_inline int ebph_do_exec_common(u64 profile_key, u32 pid,
     // TODO: reset ALF
 
     task_state->profile_key = profile_key;
+    task_state->scope_id = scope_id;
+    task_state->executable_key = executable_key;
 
     return 0;
 }
@@ -392,10 +426,12 @@ LSM_PROBE(bprm_check_security, struct linux_binprm *bprm)
 
     /* Calculate profile_key by taking inode number and filesystem device
      * number together */
-    u64 profile_key =
+    u64 executable_key =
         (u64)bprm->file->f_path.dentry->d_inode->i_ino |
         ((u64)new_encode_dev(bprm->file->f_path.dentry->d_inode->i_sb->s_dev)
          << 32);
+    u64 scope_id = ebph_current_scope_id();
+    u64 profile_key = ebph_compose_profile_key(scope_id, executable_key);
 
     u32 pid  = bpf_get_current_pid_tgid();
     u32 tgid = bpf_get_current_pid_tgid() >> 32;
@@ -403,7 +439,7 @@ LSM_PROBE(bprm_check_security, struct linux_binprm *bprm)
     // TODO: change this to bpf_d_path when it comes out (Linux 5.9?)
     const char *pathname = bprm->file->f_path.dentry->d_name.name;
 
-    ebph_do_exec_common(profile_key, pid, tgid, pathname);
+    ebph_do_exec_common(profile_key, scope_id, executable_key, pid, tgid, pathname);
 
     return ebph_do_lsm_common(EBPH_BPRM_CHECK_SECURITY, EBPH_TOLERANCE_LOW);
 }
@@ -432,7 +468,9 @@ LSM_PROBE(task_alloc, struct task_struct *task, unsigned long clone_flags)
     u32 cpid  = c->pid;
     u32 ctgid = c->tgid;
 
-    child_state = ebph_new_task_state(cpid, ctgid, parent_state->profile_key);
+    child_state = ebph_new_task_state(cpid, ctgid, parent_state->profile_key,
+                                      parent_state->scope_id,
+                                      parent_state->executable_key);
     if (!child_state) {
         // TODO: log error
         return 0;
@@ -1211,21 +1249,37 @@ int command_bootstrap_process(struct pt_regs *ctx)
     bpf_usdt_readarg(1, ctx, &rc_p);
     u64 *profile_key_p;
     bpf_usdt_readarg(2, ctx, &profile_key_p);
+    u64 *scope_id_p;
+    bpf_usdt_readarg(3, ctx, &scope_id_p);
+    u64 *executable_key_p;
+    bpf_usdt_readarg(4, ctx, &executable_key_p);
     u32 *pid_p;
-    bpf_usdt_readarg(3, ctx, &pid_p);
+    bpf_usdt_readarg(5, ctx, &pid_p);
     u32 *tgid_p;
-    bpf_usdt_readarg(4, ctx, &tgid_p);
+    bpf_usdt_readarg(6, ctx, &tgid_p);
     char **pathname_p;
-    bpf_usdt_readarg(5, ctx, &pathname_p);
+    bpf_usdt_readarg(7, ctx, &pathname_p);
 
     int rc = 0;
 
     u64 profile_key;
+    u64 scope_id;
+    u64 executable_key;
     u32 pid;
     u32 tgid;
     char *pathname;
 
     if (bpf_probe_read(&profile_key, sizeof(profile_key), profile_key_p) < 0) {
+        rc = -EINVAL;
+        goto out;
+    }
+
+    if (bpf_probe_read(&scope_id, sizeof(scope_id), scope_id_p) < 0) {
+        rc = -EINVAL;
+        goto out;
+    }
+
+    if (bpf_probe_read(&executable_key, sizeof(executable_key), executable_key_p) < 0) {
         rc = -EINVAL;
         goto out;
     }
@@ -1245,7 +1299,7 @@ int command_bootstrap_process(struct pt_regs *ctx)
         goto out;
     }
 
-    ebph_do_exec_common(profile_key, pid, tgid, pathname);
+    ebph_do_exec_common(profile_key, scope_id, executable_key, pid, tgid, pathname);
 out:
     bpf_probe_write_user(rc_p, &rc, sizeof(rc));
 
@@ -1351,13 +1405,15 @@ static __always_inline void ebph_reset_training_data(
 
 /* Create a new task_state {@pid, @tgid, @profile_key} at @pid. */
 static __always_inline struct ebph_task_state_t *ebph_new_task_state(
-    u32 pid, u32 tgid, u64 profile_key)
+    u32 pid, u32 tgid, u64 profile_key, u64 scope_id, u64 executable_key)
 {
     struct ebph_task_state_t task_state = {};
 
     task_state.pid          = pid;
     task_state.tgid         = tgid;
     task_state.profile_key  = profile_key;
+    task_state.scope_id     = scope_id;
+    task_state.executable_key = executable_key;
     task_state.count        = 0;
     task_state.seqstack_top = -1;
 
@@ -1393,7 +1449,7 @@ static __always_inline void ebph_set_normal_time(struct ebph_profile_t *profile)
 
 /* Create a new profile at @profile_key. */
 static __always_inline struct ebph_profile_t *ebph_new_profile(
-    u64 profile_key, const char *pathname)
+    u64 profile_key, u64 scope_id, u64 executable_key, const char *pathname)
 {
     struct ebph_profile_t *existing_profile = profiles.lookup(&profile_key);
     if (existing_profile)
@@ -1410,7 +1466,10 @@ static __always_inline struct ebph_profile_t *ebph_new_profile(
 
     ebph_set_normal_time(&profile);
 
-    ebph_log_new_profile(profile_key, pathname);
+    ebph_log_new_profile(profile_key, scope_id, pathname);
+
+    profile_scope_ids.update(&profile_key, &scope_id);
+    profile_executable_keys.update(&profile_key, &executable_key);
 
     return profiles.lookup_or_try_init(&profile_key, &profile);
 }

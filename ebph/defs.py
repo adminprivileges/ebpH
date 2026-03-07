@@ -55,6 +55,11 @@ NORMAL_WAIT = 1000000000 * 60 * 60 * 24 * 7 # 1 week
 # Start in enforcing mode
 ENFORCING = False
 
+# Profiling scope mode
+SCOPE_MODE_HOST = 0
+SCOPE_MODE_CONTAINER = 1
+SCOPE_MODE = SCOPE_MODE_HOST
+
 PATH_MAX = 4096
 
 # Compiler defines used in BPF program
