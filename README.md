@@ -114,6 +114,8 @@ ebpH supports two profiling scope modes:
 
 In container mode, the same executable can have distinct profiles across different container scopes. Profile and process output includes `scope_id` to support research comparisons and anomaly-rate analysis by scope.
 
+For bootstrap of already-running processes, executable identity is resolved via `/proc/<pid>/exe` first (with path-based fallback) to avoid host-path assumptions for containerized filesystems.
+
 Or, with systemd:
 
 1. Run `$ sudo systemctl start ebphd` to start the daemon if not already running.
