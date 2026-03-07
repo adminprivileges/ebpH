@@ -35,7 +35,7 @@ from ratelimit import limits
 
 from ebph.libebph import Lib
 from ebph.logger import get_logger
-from ebph.utils import running_processes, calculate_profile_key
+from ebph.utils import running_processes
 from ebph.structs import (
     EBPHProfileStruct,
     EBPH_SETTINGS,
@@ -566,8 +566,7 @@ class BPFProgram:
         return int(boot_epoch)
 
     def _bootstrap_processes(self):
-        for profile_key, scope_id, exe, pid, tid in running_processes(self.scope_mode):
-            executable_key = calculate_profile_key(exe)
+        for profile_key, scope_id, executable_key, exe, pid, tid in running_processes(self.scope_mode):
             logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key}, scope={scope_id})')
             Lib.bootstrap_process(profile_key, scope_id, executable_key, tid, pid, exe.encode('ascii'))
             self.bpf.ring_buffer_consume()
