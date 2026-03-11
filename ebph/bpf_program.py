@@ -566,6 +566,10 @@ class BPFProgram:
         return int(boot_epoch)
 
     def _bootstrap_processes(self):
+        if self.scope_mode == defs.SCOPE_MODE_CONTAINER:
+            logger.info('Skipping userspace bootstrap in container scope mode to keep scope identity sourced from kernel cgroup IDs.')
+            return
+
         for profile_key, scope_id, executable_key, exe, pid, tid in running_processes(self.scope_mode):
             logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key}, scope={scope_id})')
             Lib.bootstrap_process(profile_key, scope_id, executable_key, tid, pid, exe.encode('ascii'))

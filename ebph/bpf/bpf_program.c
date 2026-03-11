@@ -298,38 +298,6 @@ static __always_inline int ebph_do_exec_common(u64 profile_key, u64 scope_id,
                                                u64 executable_key, u32 pid,
                                                u32 tgid, const char *pathname);
 
-static __always_inline int ebph_init_current_task_state()
-{
-    u64 pid_tgid = bpf_get_current_pid_tgid();
-    u32 pid = (u32)pid_tgid;
-    u32 tgid = (u32)(pid_tgid >> 32);
-
-    if (task_states.lookup(&pid)) {
-        return 0;
-    }
-
-    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
-    if (!task || !task->mm || !task->mm->exe_file) {
-        return -ENOENT;
-    }
-
-    struct file *exe_file = task->mm->exe_file;
-    if (!exe_file->f_path.dentry || !exe_file->f_path.dentry->d_inode) {
-        return -ENOENT;
-    }
-
-    u64 executable_key =
-        (u64)exe_file->f_path.dentry->d_inode->i_ino |
-        ((u64)new_encode_dev(exe_file->f_path.dentry->d_inode->i_sb->s_dev)
-         << 32);
-    u64 scope_id = ebph_current_scope_id();
-    u64 profile_key = ebph_compose_profile_key(scope_id, executable_key);
-    const char *pathname = exe_file->f_path.dentry->d_name.name;
-
-    return ebph_do_exec_common(profile_key, scope_id, executable_key,
-                               pid, tgid, pathname);
-}
-
 static __always_inline u64 ebph_compose_profile_key(u64 scope_id, u64 executable_key)
 {
     return executable_key ^ (scope_id * 0x9e3779b97f4a7c15ULL);
@@ -393,14 +361,7 @@ static __always_inline int ebph_do_lsm_common(enum ebph_lsm_id_t lsm,
     // Look up task state
     struct ebph_task_state_t *s = task_states.lookup(&pid);
     if (!s) {
-        if (ebph_init_current_task_state()) {
-            return 0;
-        }
-
-        s = task_states.lookup(&pid);
-        if (!s) {
-            return 0;
-        }
+        return 0;
     }
 
     // Look up profile
