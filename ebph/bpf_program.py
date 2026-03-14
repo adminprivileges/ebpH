@@ -73,7 +73,10 @@ class BPFProgram:
     """
     Wraps the BPF program and exposes methods for interacting with it.
     """
-    def __init__(self, debug: bool = False, log_sequences: bool = False, auto_save = True, auto_load = True, scope_mode: int = defs.SCOPE_MODE_HOST):
+    def __init__(self, debug: bool = False, log_sequences: bool = False,
+                 auto_save = True, auto_load = True,
+                 scope_mode: int = defs.SCOPE_MODE_HOST,
+                 bootstrap_mode: str = 'auto'):
         self.bpf = None
         self.usdt_contexts = []
         self.seqstack_inner_bpf = None
@@ -86,6 +89,7 @@ class BPFProgram:
         self.auto_save = auto_save
         self.auto_load = auto_load
         self.scope_mode = scope_mode
+        self.bootstrap_mode = bootstrap_mode
 
         self.profile_key_to_exe = defaultdict(lambda: '[unknown]')
         self.syscall_number_to_name = defaultdict(lambda: '[unknown]')
@@ -566,8 +570,14 @@ class BPFProgram:
         return int(boot_epoch)
 
     def _bootstrap_processes(self):
-        if self.scope_mode == defs.SCOPE_MODE_CONTAINER:
-            logger.info('Skipping userspace bootstrap in container scope mode to keep scope identity sourced from kernel cgroup IDs.')
+        should_bootstrap = (
+            self.bootstrap_mode == 'always' or
+            (self.bootstrap_mode == 'auto' and
+             self.scope_mode == defs.SCOPE_MODE_HOST)
+        )
+
+        if not should_bootstrap:
+            logger.info(f'Skipping userspace bootstrap (bootstrap_mode={self.bootstrap_mode}, scope_mode={self.scope_mode}).')
             return
 
         for profile_key, scope_id, executable_key, exe, pid, tid in running_processes(self.scope_mode):

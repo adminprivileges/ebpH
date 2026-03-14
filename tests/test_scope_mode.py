@@ -19,6 +19,16 @@ def test_parse_scope_mode_container():
     assert args.scope_mode == defs.SCOPE_MODE_CONTAINER
 
 
+def test_parse_bootstrap_mode_never():
+    args = parse_args('--nodaemon --bootstrap-mode never'.split())
+    assert args.bootstrap_mode == 'never'
+
+
+def test_parse_bootstrap_mode_always():
+    args = parse_args('--nodaemon --bootstrap-mode always'.split())
+    assert args.bootstrap_mode == 'always'
+
+
 def test_compose_profile_key_host_compatibility():
     executable_key = 0x12345678
     assert compose_profile_key(0, executable_key) == executable_key
