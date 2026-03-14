@@ -35,7 +35,7 @@ from ratelimit import limits
 
 from ebph.libebph import Lib
 from ebph.logger import get_logger
-from ebph.utils import running_processes
+from ebph.utils import running_processes, list_container_scope_ids
 from ebph.structs import (
     EBPHProfileStruct,
     EBPH_SETTINGS,
@@ -127,6 +127,8 @@ class BPFProgram:
         except Exception as e:
             logger.error('Unable to bootstrap processes', exc_info=e)
 
+        self._sync_container_scope_ids()
+
         self.start_monitoring()
 
     def on_tick(self) -> None:
@@ -138,6 +140,9 @@ class BPFProgram:
 
             if self.auto_save and self.tick_count % defs.PROFILE_SAVE_INTERVAL == 0:
                 self.save_profiles()
+
+            if self.tick_count % 10 == 0:
+                self._sync_container_scope_ids()
 
             self.bpf.ring_buffer_consume()
         except Exception:
@@ -584,6 +589,19 @@ class BPFProgram:
             logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key}, scope={scope_id})')
             Lib.bootstrap_process(profile_key, scope_id, executable_key, tid, pid, exe.encode('ascii'))
             self.bpf.ring_buffer_consume()
+
+    def _sync_container_scope_ids(self) -> None:
+        if self.scope_mode != defs.SCOPE_MODE_CONTAINER:
+            return
+
+        try:
+            scope_map = self.bpf['container_scope_ids']
+            scope_map.clear()
+            one = ct.c_ubyte(1)
+            for scope_id in list_container_scope_ids():
+                scope_map[ct.c_uint64(scope_id)] = one
+        except Exception as e:
+            logger.debug('Unable to sync container scope IDs', exc_info=e)
 
     def _set_cflags(self) -> None:
         logger.info('Setting cflags...')

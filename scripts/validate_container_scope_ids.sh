@@ -75,4 +75,29 @@ if [[ "$S1A" == "$S2A" ]]; then
   exit 1
 fi
 
+echo "[extra] Verifying host process scope is 0 in container mode..."
+/usr/bin/sleep 60 &
+HOST_SLEEP_PID=$!
+sleep 1
+HOST_SCOPE="$(pid_scope "$HOST_SLEEP_PID")"
+if [[ "$HOST_SCOPE" != "0" ]]; then
+  echo "FAIL: host sleep pid $HOST_SLEEP_PID has scope $HOST_SCOPE (expected 0)." >&2
+  kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
+  exit 1
+fi
+
+echo "[extra] Verifying host/container same executable split by scope..."
+if ! sudo ebph ps -p | awk '$1=="/usr/bin/sleep" {print $2}' | grep -qx "0"; then
+  echo "FAIL: did not find /usr/bin/sleep profile with host scope 0." >&2
+  kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
+  exit 1
+fi
+if ! sudo ebph ps -p | awk '$1=="/usr/bin/sleep" {print $2}' | grep -qx "$S1A"; then
+  echo "FAIL: did not find /usr/bin/sleep profile with container scope $S1A." >&2
+  kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
+  exit 1
+fi
+
+kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
+
 echo "PASS: different containers have different scope IDs, and processes within each container share that container's scope ID."

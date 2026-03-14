@@ -22,9 +22,10 @@
 """
 
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
-from typing import Callable, Iterator, Union, Tuple
+from typing import Callable, Iterator, Union, Tuple, Set
 
 from proc.core import find_processes
 import requests
@@ -113,6 +114,70 @@ def get_process_scope_id(pid: int) -> int:
         return os.stat(full_path).st_ino & 0xFFFF_FFFF_FFFF_FFFF
     except Exception:
         return 0
+
+
+def _is_container_cgroup_path(cgroup_path: str) -> bool:
+    """
+    Best-effort Docker/containerd cgroup path matcher.
+    """
+    return (
+        '/docker/' in cgroup_path or
+        '/docker-' in cgroup_path or
+        'docker-' in cgroup_path or
+        '/containerd/' in cgroup_path or
+        '/libpod-' in cgroup_path
+    )
+
+
+def list_container_scope_ids() -> Set[int]:
+    """
+    Best-effort set of known container scope IDs from running docker containers.
+    Scope IDs are cgroupfs inodes and match the BPF cgroup IDs on cgroup v2 hosts.
+    """
+    scope_ids: Set[int] = set()
+    try:
+        res = subprocess.run(
+            ['docker', 'ps', '-q'],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return scope_ids
+
+    if res.returncode != 0:
+        return scope_ids
+
+    container_ids = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    for container_id in container_ids:
+        try:
+            pid_res = subprocess.run(
+                ['docker', 'inspect', '-f', '{{.State.Pid}}', container_id],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            if pid_res.returncode != 0:
+                continue
+            pid = int(pid_res.stdout.strip())
+            if pid <= 0:
+                continue
+
+            with open(f'/proc/{pid}/cgroup', 'r') as f:
+                line = f.readline().strip()
+            cgroup_path = line.split(':', 2)[-1]
+            if not _is_container_cgroup_path(cgroup_path):
+                continue
+
+            full_path = os.path.join('/sys/fs/cgroup', cgroup_path.lstrip('/'))
+            scope_ids.add(os.stat(full_path).st_ino & 0xFFFF_FFFF_FFFF_FFFF)
+        except Exception:
+            continue
+
+    return scope_ids
 
 
 def get_process_executable_path(pid: int, fallback_path: Union[str, None] = None) -> Union[str, None]:

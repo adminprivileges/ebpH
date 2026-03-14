@@ -64,6 +64,9 @@ BPF_HASH(profile_scope_ids, u64, u64, EBPH_MAX_PROFILES);
 /* Profile Key -> Executable Identity */
 BPF_HASH(profile_executable_keys, u64, u64, EBPH_MAX_PROFILES);
 
+/* Known container cgroup IDs -> 1 */
+BPF_HASH(container_scope_ids, u64, u8, EBPH_MAX_PROCESSES);
+
 /* Profile Key -> Syscall Flags */
 BPF_F_TABLE("hash", u64, struct ebph_flags_t, training_data, EBPH_MAX_PROFILES,
             BPF_F_NO_PREALLOC);
@@ -287,7 +290,12 @@ static __always_inline void ebph_log_tolerize_limit(struct ebph_task_state_t *s,
 static __always_inline u64 ebph_current_scope_id()
 {
     if (EBPH_SCOPE_MODE == EBPH_SCOPE_MODE_CONTAINER) {
-        return bpf_get_current_cgroup_id();
+        u64 cgroup_id = bpf_get_current_cgroup_id();
+        u8 *is_container = container_scope_ids.lookup(&cgroup_id);
+        if (!is_container) {
+            return 0;
+        }
+        return cgroup_id;
     }
     return 0;
 }

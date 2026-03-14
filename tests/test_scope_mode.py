@@ -1,6 +1,12 @@
 from ebph import defs
 from ebph.ebphd import parse_args
-from ebph.utils import compose_profile_key, calculate_profile_key_from_stat, get_process_executable_key
+from ebph.utils import (
+    compose_profile_key,
+    calculate_profile_key_from_stat,
+    get_process_executable_key,
+    _is_container_cgroup_path,
+    list_container_scope_ids,
+)
 
 
 class _FakeStat:
@@ -54,3 +60,52 @@ def test_get_process_executable_key_fallback(monkeypatch):
     monkeypatch.setattr(utils, 'calculate_profile_key', lambda p: 0x1337)
 
     assert get_process_executable_key(1234, '/fake/exe') == 0x1337
+
+
+def test_is_container_cgroup_path_detection():
+    assert _is_container_cgroup_path('/system.slice/docker-abc.scope')
+    assert _is_container_cgroup_path('/docker/abc123')
+    assert not _is_container_cgroup_path('/user.slice/user-1000.slice/session-2.scope')
+
+
+def test_list_container_scope_ids(monkeypatch):
+    import io
+    import ebph.utils as utils
+
+    class _Result:
+        def __init__(self, returncode, stdout=''):
+            self.returncode = returncode
+            self.stdout = stdout
+
+    def fake_run(cmd, check, stdout, stderr, text):
+        if cmd[:3] == ['docker', 'ps', '-q']:
+            return _Result(0, 'cid1\ncid2\n')
+        if cmd[:3] == ['docker', 'inspect', '-f'] and cmd[-1] == 'cid1':
+            return _Result(0, '123\n')
+        if cmd[:3] == ['docker', 'inspect', '-f'] and cmd[-1] == 'cid2':
+            return _Result(0, '456\n')
+        return _Result(1, '')
+
+    def fake_open(path, mode='r', *args, **kwargs):
+        if path == '/proc/123/cgroup':
+            return io.StringIO('0::/system.slice/docker-aaa.scope\n')
+        if path == '/proc/456/cgroup':
+            return io.StringIO('0::/system.slice/docker-bbb.scope\n')
+        raise FileNotFoundError(path)
+
+    class _Stat:
+        def __init__(self, st_ino):
+            self.st_ino = st_ino
+
+    def fake_stat(path):
+        if path.endswith('docker-aaa.scope'):
+            return _Stat(111)
+        if path.endswith('docker-bbb.scope'):
+            return _Stat(222)
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(utils.subprocess, 'run', fake_run)
+    monkeypatch.setattr(utils, 'open', fake_open)
+    monkeypatch.setattr(utils.os, 'stat', fake_stat)
+
+    assert list_container_scope_ids() == {111, 222}
