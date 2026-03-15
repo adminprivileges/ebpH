@@ -52,6 +52,8 @@ class EBPHDaemon(DaemonMixin):
         self.log_sequences = args.log_sequences
         self.auto_save = not args.nosave
         self.auto_load = not args.noload
+        self.scope_mode = args.scope_mode
+        self.bootstrap_mode = args.bootstrap_mode
 
     def tick(self) -> None:
         """
@@ -88,7 +90,8 @@ class EBPHDaemon(DaemonMixin):
         from ebph.bpf_program import BPFProgram
         self.bpf_program = BPFProgram(debug=self.debug,
                 log_sequences=self.log_sequences, auto_save=self.auto_save,
-                auto_load=self.auto_load)
+                auto_load=self.auto_load, scope_mode=self.scope_mode,
+                bootstrap_mode=self.bootstrap_mode)
         global bpf_program
         bpf_program = self.bpf_program
 
@@ -123,6 +126,11 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
             help=f"Don't load profiles.")
     parser.add_argument('--debug', action='store_true',
             help=f"Run in debug mode. Side effect: sets verbosity level to debug regardless of what is set in configuration options.")
+    parser.add_argument('--scope-mode', dest='scope_mode', default='host', choices=['host', 'container'],
+            help='Profiling scope mode: host (default) or container-aware.')
+    parser.add_argument('--bootstrap-mode', dest='bootstrap_mode',
+            default='auto', choices=['auto', 'always', 'never'],
+            help='Bootstrap existing processes at startup: auto (default: host=yes, container=no), always, or never.')
     # Quick testing mode. This option sets --nodaemon --nolog --nosave --noload flags.
     parser.add_argument('--testing', action='store_true',
             help=argparse.SUPPRESS)
@@ -135,6 +143,8 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
         args.nolog = True
         args.nosave = True
         args.noload = True
+
+    args.scope_mode = defs.SCOPE_MODE_HOST if args.scope_mode == 'host' else defs.SCOPE_MODE_CONTAINER
 
     # Check for root
     if not (os.geteuid() == 0):

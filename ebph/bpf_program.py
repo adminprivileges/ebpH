@@ -35,7 +35,7 @@ from ratelimit import limits
 
 from ebph.libebph import Lib
 from ebph.logger import get_logger
-from ebph.utils import running_processes
+from ebph.utils import running_processes, list_container_scope_ids
 from ebph.structs import (
     EBPHProfileStruct,
     EBPH_SETTINGS,
@@ -73,7 +73,10 @@ class BPFProgram:
     """
     Wraps the BPF program and exposes methods for interacting with it.
     """
-    def __init__(self, debug: bool = False, log_sequences: bool = False, auto_save = True, auto_load = True):
+    def __init__(self, debug: bool = False, log_sequences: bool = False,
+                 auto_save = True, auto_load = True,
+                 scope_mode: int = defs.SCOPE_MODE_HOST,
+                 bootstrap_mode: str = 'auto'):
         self.bpf = None
         self.usdt_contexts = []
         self.seqstack_inner_bpf = None
@@ -85,6 +88,8 @@ class BPFProgram:
         self.debug = debug
         self.auto_save = auto_save
         self.auto_load = auto_load
+        self.scope_mode = scope_mode
+        self.bootstrap_mode = bootstrap_mode
 
         self.profile_key_to_exe = defaultdict(lambda: '[unknown]')
         self.syscall_number_to_name = defaultdict(lambda: '[unknown]')
@@ -122,6 +127,8 @@ class BPFProgram:
         except Exception as e:
             logger.error('Unable to bootstrap processes', exc_info=e)
 
+        self._sync_container_scope_ids()
+
         self.start_monitoring()
 
     def on_tick(self) -> None:
@@ -133,6 +140,9 @@ class BPFProgram:
 
             if self.auto_save and self.tick_count % defs.PROFILE_SAVE_INTERVAL == 0:
                 self.save_profiles()
+
+            if self.tick_count % 10 == 0:
+                self._sync_container_scope_ids()
 
             self.bpf.ring_buffer_consume()
         except Exception:
@@ -211,10 +221,15 @@ class BPFProgram:
         for k in self.bpf['profiles'].keys():
             key = k.value
             exe = self.profile_key_to_exe[key]
-            fname = f'{key}'
+            scope_id = self.get_profile_scope_id(key)
+            fname = f'{scope_id}_{key}' if self.scope_mode == defs.SCOPE_MODE_CONTAINER else f'{key}'
             try:
                 profile = EBPHProfileStruct.from_bpf(
-                    self.bpf, exe.encode('ascii'), key
+                    self.bpf,
+                    exe.encode('ascii'),
+                    key,
+                    scope_id=scope_id,
+                    executable_key=self.get_profile_executable_key(key),
                 )
                 with open(os.path.join(defs.EBPH_DATA_DIR, fname), 'wb') as f:
                     f.write(profile)
@@ -285,6 +300,18 @@ class BPFProgram:
         Get a task_state indexed by @pid from the BPF program.
         """
         return self.bpf['task_states'][ct.c_uint32(pid)]
+
+    def get_profile_scope_id(self, key: int) -> int:
+        try:
+            return self.bpf['profile_scope_ids'][ct.c_uint64(key)].value
+        except Exception:
+            return 0
+
+    def get_profile_executable_key(self, key: int) -> int:
+        try:
+            return self.bpf['profile_executable_keys'][ct.c_uint64(key)].value
+        except Exception:
+            return key
 
     def normalize_profile(self, profile_key: int):
         """
@@ -405,10 +432,10 @@ class BPFProgram:
 
             if self.debug:
                 logger.info(
-                    f'Created new profile for {pathname} ({event.profile_key}).'
+                    f'Created new profile for {pathname} ({event.profile_key}, scope={event.scope_id}).'
                 )
             else:
-                logger.info(f'Created new profile for {pathname}.')
+                logger.info(f'Created new profile for {pathname} (scope={event.scope_id}).')
 
         @ringbuf_callback(self.bpf, 'anomaly_events')
         def anomaly_events(ctx, event, size):
@@ -426,7 +453,7 @@ class BPFProgram:
 
             logger.audit(
                 f'Anomalous {name} ({misses} misses) '
-                f'in PID {pid} ({exe}) after {count} calls.'
+                f'in PID {pid} ({exe}, scope={event.scope_id}) after {count} calls.'
             )
 
         @ringbuf_callback(self.bpf, 'new_sequence_events')
@@ -450,7 +477,7 @@ class BPFProgram:
             task_count = event.task_count
 
             logger.debug(
-                f'New sequence in PID {pid} ({exe}), task count = {task_count}, profile count = {profile_count}.'
+                f'New sequence in PID {pid} ({exe}, scope={event.scope_id}), task count = {task_count}, profile count = {profile_count}.'
             )
             logger.sequence(f'PID {pid} ({exe}): ' + ', '.join(sequence))
 
@@ -531,7 +558,7 @@ class BPFProgram:
             lfc = event.lfc
             exe = self.profile_key_to_exe[profile_key]
 
-            logger.info(f'Tolerize limit exceeded for PID {pid} ({exe}), LFC is {lfc}. Training data reset.')
+            logger.info(f'Tolerize limit exceeded for PID {pid} ({exe}, scope={event.scope_id}), LFC is {lfc}. Training data reset.')
 
     def _generate_syscall_defines(self, flags: List[str]) -> None:
         from bcc.syscall import syscalls
@@ -548,15 +575,39 @@ class BPFProgram:
         return int(boot_epoch)
 
     def _bootstrap_processes(self):
-        for profile_key, exe, pid, tid in running_processes():
-            logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key})')
-            Lib.bootstrap_process(profile_key, tid, pid, exe.encode('ascii'))
+        should_bootstrap = (
+            self.bootstrap_mode == 'always' or
+            (self.bootstrap_mode == 'auto' and
+             self.scope_mode == defs.SCOPE_MODE_HOST)
+        )
+
+        if not should_bootstrap:
+            logger.info(f'Skipping userspace bootstrap (bootstrap_mode={self.bootstrap_mode}, scope_mode={self.scope_mode}).')
+            return
+
+        for profile_key, scope_id, executable_key, exe, pid, tid in running_processes(self.scope_mode):
+            logger.debug(f'Found process {pid},{tid} running {exe} ({profile_key}, scope={scope_id})')
+            Lib.bootstrap_process(profile_key, scope_id, executable_key, tid, pid, exe.encode('ascii'))
             self.bpf.ring_buffer_consume()
+
+    def _sync_container_scope_ids(self) -> None:
+        if self.scope_mode != defs.SCOPE_MODE_CONTAINER:
+            return
+
+        try:
+            scope_map = self.bpf['container_scope_ids']
+            scope_map.clear()
+            one = ct.c_ubyte(1)
+            for scope_id in list_container_scope_ids():
+                scope_map[ct.c_uint64(scope_id)] = one
+        except Exception as e:
+            logger.debug('Unable to sync container scope IDs', exc_info=e)
 
     def _set_cflags(self) -> None:
         logger.info('Setting cflags...')
 
         self.cflags.append(f'-I{defs.BPF_DIR}')
+        self.cflags.append(f'-DEBPH_SCOPE_MODE={self.scope_mode}')
         for k, v in defs.BPF_DEFINES.items():
             self.cflags.append(f'-D{k}={v}')
 

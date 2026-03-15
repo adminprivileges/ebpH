@@ -30,6 +30,13 @@
 
 #include "lsm.h"
 
+#ifndef EBPH_SCOPE_MODE
+#define EBPH_SCOPE_MODE 0
+#endif
+
+#define EBPH_SCOPE_MODE_HOST 0
+#define EBPH_SCOPE_MODE_CONTAINER 1
+
 /* =========================================================================
  * Data Structures and Types
  * ========================================================================= */
@@ -56,6 +63,8 @@ struct ebph_task_state_t {
     u32 pid;
     u32 tgid;
     u64 profile_key;
+    u64 scope_id;
+    u64 executable_key;
     char seqstack_top;
     u64 count;
     // ALF stats
@@ -120,7 +129,7 @@ static __always_inline void ebph_reset_training_data(
 
 /* Create a new task_state {@pid, @tgid, @profile_key} at @pid. */
 static __always_inline struct ebph_task_state_t *ebph_new_task_state(
-    u32 pid, u32 tgid, u64 profile_key);
+    u32 pid, u32 tgid, u64 profile_key, u64 scope_id, u64 executable_key);
 
 static __always_inline int ebph_reset_alf(struct ebph_task_state_t *s);
 
@@ -131,7 +140,7 @@ static __always_inline void ebph_set_normal_time(
 /* Create a new profile at @profile_key and log @pathname association to
  * userspace. */
 static __always_inline struct ebph_profile_t *ebph_new_profile(
-    u64 profile_key, const char *pathname);
+    u64 profile_key, u64 scope_id, u64 executable_key, const char *pathname);
 
 /* Push a new frame onto the sequence stack for @task_state. */
 static __always_inline struct ebph_sequence_t *ebph_push_seq(

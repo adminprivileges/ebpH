@@ -43,6 +43,7 @@ def print_profile_information(profile: Dict) -> None:
     status = profile['status']
     status = status.split('EBPH_PROFILE_STATUS.')[1].lower()
     anomalies = profile['anomaly_count']
+    scope_id = profile.get('scope_id', 0)
     train_count = profile['train_count']
     last_mod_count = profile['last_mod_count']
     # Don't show normal time if we are training
@@ -53,11 +54,11 @@ def print_profile_information(profile: Dict) -> None:
 
     global header
     if not header:
-        print(f"{'COMM':<20} {'STATUS':<16} {'TRAIN_COUNT':>12} {'LAST_MOD':>12} "
+        print(f"{'COMM':<20} {'SCOPE':<18} {'STATUS':<16} {'TRAIN_COUNT':>12} {'LAST_MOD':>12} "
                 f"{'ANOMALIES':>12}   {'NORMAL TIME':<16}")
         header = True
 
-    print(f"{comm:<20} {status:<16} {train_count:>12} {last_mod_count:>12} "
+    print(f"{comm:<20} {scope_id:<18} {status:<16} {train_count:>12} {last_mod_count:>12} "
             f"{anomalies:>12}   {normal_time:<16}")
 
 def print_process_information(process: Dict, show_tid: bool) -> None:
@@ -66,6 +67,7 @@ def print_process_information(process: Dict, show_tid: bool) -> None:
     tid = process['tid']
     total_lfc = process['total_lfc']
     max_lfc = process['max_lfc']
+    scope_id = process.get('scope_id', 0)
     # Profile stuff
     profile = process['profile']
     comm = format_comm(profile["exe"])
@@ -87,7 +89,7 @@ def print_process_information(process: Dict, show_tid: bool) -> None:
 
     global header
     if not header:
-        print(f"{process_part} {'COMM':<20} {'STATUS':<16} {'TRAIN_COUNT':>12} "
+        print(f"{process_part} {'SCOPE':<18} {'COMM':<20} {'STATUS':<16} {'TRAIN_COUNT':>12} "
                 f"{'LAST_MOD':>12} {'LOCAL ANOMALIES':>16} {'ANOMALIES':>12}   {'NORMAL TIME':<16}")
         header = True
 
@@ -98,7 +100,7 @@ def print_process_information(process: Dict, show_tid: bool) -> None:
 
     lfc_part = f'{total_lfc} ({max_lfc} max)'
 
-    print(f"{process_part} {comm:<20} {status:<16} {train_count:>12} {last_mod_count:>12} "
+    print(f"{process_part} {scope_id:<18} {comm:<20} {status:<16} {train_count:>12} {last_mod_count:>12} "
             f"{lfc_part:>16} {anomalies:>12}   {normal_time:<16}")
 
 

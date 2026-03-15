@@ -99,9 +99,31 @@ ALLOW_ROOT=1 DO_SYSTEMD=0 bash ./scripts/bootstrap.sh
 ## How to Use / Examples
 
 1. Run `$ sudo ebphd start` to start the daemon.
+   - Host-compatible mode (default): `$ sudo ebphd start` or `$ sudo ebphd --scope-mode host start`
+   - Container-aware mode: `$ sudo ebphd --scope-mode container start`
+   - Disable Bootstrap (for experiments): `$ sudo ebphd --bootstrap-mode never`
 1. Run `$ sudo ebph admin status` to check daemon status.
 1. Run `$ sudo ebph ps` to check monitored processes.
 1. Run `$ sudo ebph ps -p` to list all active profiles.
+
+To validate container-scope behavior with two running containers:
+
+```bash
+sudo scripts/validate_container_scope_ids.sh <container_a> <container_b>
+```
+
+### Scope modes
+
+ebpH supports two profiling scope modes:
+
+- `host` (default): preserves historical executable-centric behavior. Profile identity remains compatible with legacy host-wide behavior.
+- `container`: profile identity becomes scope-aware and is computed from `(scope_id, executable_identity)`, where `scope_id` is derived from cgroup identity in-kernel.
+
+In container mode, the same executable can have distinct profiles across different container scopes. Profile and process output includes `scope_id` to support research comparisons and anomaly-rate analysis by scope.
+
+In container mode, two processes running the same executable within the same container are expected to share one profile because both `scope_id` and `executable_identity` match.
+
+For bootstrap of already-running processes, executable identity is resolved via `/proc/<pid>/exe` first (with path-based fallback) to avoid host-path assumptions for containerized filesystems.
 
 Or, with systemd:
 

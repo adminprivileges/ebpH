@@ -214,6 +214,8 @@ class EBPHProfileStruct(ct.Structure):
     _fields_ = (
         ('magic', ct.c_uint64),
         ('profile_key', ct.c_uint64),
+        ('scope_id', ct.c_uint64),
+        ('executable_key', ct.c_uint64),
         ('status', ct.c_uint8),
         ('anomaly_count', ct.c_uint64),
         ('train_count', ct.c_uint64),
@@ -229,6 +231,8 @@ class EBPHProfileStruct(ct.Structure):
     def __eq__(self, other: 'EBPHProfileDataStruct') -> bool:
         try:
             assert self.profile_key == other.profile_key
+            assert self.scope_id == other.scope_id
+            assert self.executable_key == other.executable_key
             assert self.status == other.status
             assert self.anomaly_count == other.anomaly_count
             assert self.train_count == other.train_count
@@ -249,7 +253,7 @@ class EBPHProfileStruct(ct.Structure):
         return pformat((self.__class__.__name__, self._asdict()))
 
     @classmethod
-    def from_bpf(cls, bpf: BPF, exe: bytes, profile_key: int,) -> 'EBPHProfileStruct':
+    def from_bpf(cls, bpf: BPF, exe: bytes, profile_key: int, scope_id: int = 0, executable_key: int = 0) -> 'EBPHProfileStruct':
         """
         Create a new profile structure from the BPF program, its exe name
         (in bytes), and its key.
@@ -257,6 +261,8 @@ class EBPHProfileStruct(ct.Structure):
         profile = EBPHProfileStruct()
         profile.magic = calculate_profile_magic()
         profile.profile_key = profile_key
+        profile.scope_id = scope_id
+        profile.executable_key = executable_key
         profile.exe = exe
 
         try:
@@ -308,6 +314,8 @@ class EBPHProfileStruct(ct.Structure):
         bpf_profile.count = self.count
         # Update map
         bpf['profiles'][ct.c_uint64(self.profile_key)] = bpf_profile
+        bpf['profile_scope_ids'][ct.c_uint64(self.profile_key)] = ct.c_uint64(self.scope_id)
+        bpf['profile_executable_keys'][ct.c_uint64(self.profile_key)] = ct.c_uint64(self.executable_key)
 
         # Get leaf
         train = bpf['training_data'].Leaf()

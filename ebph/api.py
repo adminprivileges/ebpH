@@ -129,6 +129,8 @@ class API:
             return {
                     'exe': str(API.bpf_program.profile_key_to_exe[key]),
                     'profile_key': key,
+                    'scope_id': API.bpf_program.get_profile_scope_id(key),
+                    'executable_key': API.bpf_program.get_profile_executable_key(key),
                     'status': str(EBPH_PROFILE_STATUS(profile.status)),
                     'anomaly_count': profile.anomaly_count,
                     'count': profile.count,
@@ -351,6 +353,7 @@ class API:
         return {
                 'pid': process.tgid,
                 'tid': process.pid,
+                'scope_id': process.scope_id,
                 'count': process.count,
                 'total_lfc': process.total_lfc,
                 'max_lfc': process.max_lfc,

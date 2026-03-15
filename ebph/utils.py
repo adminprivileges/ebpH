@@ -22,9 +22,10 @@
 """
 
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
-from typing import Callable, Iterator, Union, Tuple
+from typing import Callable, Iterator, Union, Tuple, Set
 
 from proc.core import find_processes
 import requests
@@ -83,6 +84,127 @@ def calculate_profile_key(fpath: str) -> int:
     st_ino = s.st_ino
     return st_dev << 32 | st_ino
 
+
+def calculate_profile_key_from_stat(s: os.stat_result) -> int:
+    """
+    Calculate executable identity key from a stat result.
+    """
+    st_dev = s.st_dev
+    st_ino = s.st_ino
+    return st_dev << 32 | st_ino
+
+
+def compose_profile_key(scope_id: int, executable_key: int) -> int:
+    """
+    Compose a scope-aware profile key from (scope_id, executable_key).
+    In host mode, scope_id is zero and this preserves historical behavior.
+    """
+    return (executable_key ^ ((scope_id * 0x9e3779b97f4a7c15) & 0xFFFF_FFFF_FFFF_FFFF)) & 0xFFFF_FFFF_FFFF_FFFF
+
+
+def get_process_scope_id(pid: int) -> int:
+    """
+    Best-effort cgroup scope identifier for @pid from cgroupfs inode.
+    """
+    try:
+        with open(f'/proc/{pid}/cgroup', 'r') as f:
+            line = f.readline().strip()
+        cgroup_path = line.split(':', 2)[-1]
+        full_path = os.path.join('/sys/fs/cgroup', cgroup_path.lstrip('/'))
+        return os.stat(full_path).st_ino & 0xFFFF_FFFF_FFFF_FFFF
+    except Exception:
+        return 0
+
+
+def _is_container_cgroup_path(cgroup_path: str) -> bool:
+    """
+    Best-effort Docker/containerd cgroup path matcher.
+    """
+    return (
+        '/docker/' in cgroup_path or
+        '/docker-' in cgroup_path or
+        'docker-' in cgroup_path or
+        '/containerd/' in cgroup_path or
+        '/libpod-' in cgroup_path
+    )
+
+
+def list_container_scope_ids() -> Set[int]:
+    """
+    Best-effort set of known container scope IDs from running docker containers.
+    Scope IDs are cgroupfs inodes and match the BPF cgroup IDs on cgroup v2 hosts.
+    """
+    scope_ids: Set[int] = set()
+    try:
+        res = subprocess.run(
+            ['docker', 'ps', '-q'],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return scope_ids
+
+    if res.returncode != 0:
+        return scope_ids
+
+    container_ids = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    for container_id in container_ids:
+        try:
+            pid_res = subprocess.run(
+                ['docker', 'inspect', '-f', '{{.State.Pid}}', container_id],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            if pid_res.returncode != 0:
+                continue
+            pid = int(pid_res.stdout.strip())
+            if pid <= 0:
+                continue
+
+            with open(f'/proc/{pid}/cgroup', 'r') as f:
+                line = f.readline().strip()
+            cgroup_path = line.split(':', 2)[-1]
+            if not _is_container_cgroup_path(cgroup_path):
+                continue
+
+            full_path = os.path.join('/sys/fs/cgroup', cgroup_path.lstrip('/'))
+            scope_ids.add(os.stat(full_path).st_ino & 0xFFFF_FFFF_FFFF_FFFF)
+        except Exception:
+            continue
+
+    return scope_ids
+
+
+def get_process_executable_path(pid: int, fallback_path: Union[str, None] = None) -> Union[str, None]:
+    """
+    Best-effort executable path for pid from procfs.
+    """
+    try:
+        return os.readlink(f'/proc/{pid}/exe')
+    except Exception:
+        return fallback_path
+
+
+def get_process_executable_key(pid: int, fallback_path: Union[str, None] = None) -> int:
+    """
+    Best-effort executable identity for pid.
+
+    Primary method uses /proc/<pid>/exe stat to avoid host-path assumptions.
+    Fallback method uses calculate_profile_key on fallback_path when available.
+    """
+    try:
+        stat_res = os.stat(f'/proc/{pid}/exe')
+        return calculate_profile_key_from_stat(stat_res)
+    except Exception:
+        if fallback_path:
+            return calculate_profile_key(fallback_path)
+        raise
+
 def fail_with(err: str) -> None:
     print(err, file=sys.stderr)
     sys.exit(-1)
@@ -108,10 +230,11 @@ def request_or_die(req_method: Callable, url: str, fail_message:str = 'Operation
     except requests.ConnectionError:
         fail_with('Unable to connect to ebpH daemon!')
 
-def running_processes() -> Iterator[Tuple[int, str, int, int]]:
+def running_processes(scope_mode: int = 0) -> Iterator[Tuple[int, int, int, str, int, int]]:
     """
     Returns an interator of all processes running on the
-    system. Iterator contains tuples of [@profile_key, @exe, @pid, @tid]
+    system. Iterator contains tuples of
+    [@profile_key, @scope_id, @executable_key, @exe, @pid, @tid]
     """
     for p in find_processes():
         exe = p.exe
@@ -120,7 +243,10 @@ def running_processes() -> Iterator[Tuple[int, str, int, int]]:
         if not exe:
             continue
         try:
-            profile_key = calculate_profile_key(exe)
+            executable_key = get_process_executable_key(tid, exe)
         except Exception:
             continue
-        yield (profile_key, exe, pid, tid)
+        exe = get_process_executable_path(tid, exe) or exe
+        scope_id = 0 if scope_mode == 0 else get_process_scope_id(tid)
+        profile_key = compose_profile_key(scope_id, executable_key)
+        yield (profile_key, scope_id, executable_key, exe, pid, tid)
