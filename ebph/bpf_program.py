@@ -149,12 +149,11 @@ class BPFProgram:
         self.change_setting(EBPH_SETTINGS.ANOMALY_LIMIT, defs.ANOMALY_LIMIT)
         self.change_setting(EBPH_SETTINGS.TOLERIZE_LIMIT, defs.TOLERIZE_LIMIT)
 
+        self._sync_container_scope_ids()
         try:
             self._bootstrap_processes()
         except Exception as e:
             logger.error('Unable to bootstrap processes', exc_info=e)
-
-        self._sync_container_scope_ids()
 
         self.start_monitoring()
 
@@ -173,8 +172,8 @@ class BPFProgram:
 
             self.bpf.ring_buffer_consume()
             self._process_window_tick()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error('Tick failed', exc_info=e)
 
     def _resolve_process_identity(self, tid: int) -> Tuple[int, bool]:
         try:
@@ -915,8 +914,7 @@ class BPFProgram:
     def _bootstrap_processes(self):
         should_bootstrap = (
             self.bootstrap_mode == 'always' or
-            (self.bootstrap_mode == 'auto' and
-             self.scope_mode == defs.SCOPE_MODE_HOST)
+            self.bootstrap_mode == 'auto'
         )
 
         if not should_bootstrap:
