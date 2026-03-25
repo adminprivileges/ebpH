@@ -180,12 +180,28 @@ class BPFProgram:
             tgid = int(self.get_process(tid).tgid)
             return tgid, False
         except Exception:
-            self.tgid_resolution_fallback_count += 1
-            logger.warning(
-                f'TGID resolution failed for tid={tid}; using TID-based fallback windowing '
-                f'(fallback_count={self.tgid_resolution_fallback_count}).'
-            )
-            return tid, True
+            pass
+
+        # Best effort procfs fallback for short-lived processes whose task_state
+        # has already been cleaned up by the time the userspace callback runs.
+        try:
+            with open(f'/proc/{tid}/status', 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.startswith('Tgid:'):
+                        tgid = int(line.split(':', 1)[1].strip())
+                        if tgid > 0:
+                            return tgid, False
+                        break
+        except Exception:
+            pass
+
+        self.tgid_resolution_fallback_count += 1
+        # This can be noisy for very short-lived processes, so keep it to debug.
+        logger.debug(
+            f'TGID resolution failed for tid={tid}; using TID-based fallback windowing '
+            f'(fallback_count={self.tgid_resolution_fallback_count}).'
+        )
+        return tid, True
 
     @staticmethod
     def _is_normal_profile_status(status: int) -> bool:
