@@ -51,10 +51,19 @@ if [[ -z "$P1A" || -z "$P1B" || -z "$P2A" || -z "$P2B" ]]; then
 fi
 
 echo "[2/4] Resolving ebph scopes from ebph ps -t ..."
-S1A="$(pid_scope "$P1A")"
-S1B="$(pid_scope "$P1B")"
-S2A="$(pid_scope "$P2A")"
-S2B="$(pid_scope "$P2B")"
+# Container scope IDs are synced periodically in userspace; allow brief retry
+# window to avoid transient mixed host/container scope readings.
+for _attempt in $(seq 1 10); do
+  S1A="$(pid_scope "$P1A")"
+  S1B="$(pid_scope "$P1B")"
+  S2A="$(pid_scope "$P2A")"
+  S2B="$(pid_scope "$P2B")"
+
+  if [[ "$S1A" == "$S1B" && "$S2A" == "$S2B" && "$S1A" != "$S2A" ]]; then
+    break
+  fi
+  sleep 1
+done
 
 echo "Container $C1 PIDs $P1A/$P1B => scopes $S1A/$S1B"
 echo "Container $C2 PIDs $P2A/$P2B => scopes $S2A/$S2B"
