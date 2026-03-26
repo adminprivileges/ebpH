@@ -470,15 +470,14 @@ class BPFProgram:
         }
 
         candidate = self.context_pipeline.finalize_decision(candidate)
-        self.context_pipeline.write_case(candidate)
         self.context_pipeline.update_profile_summary(
             scope_id,
             executable_key,
             stage1_score,
             anomaly_density,
         )
-
         candidate['latency']['total_finalize_ms'] = float(round((time.time_ns() - t0_ns) / 1e6, 3))
+        self.context_pipeline.write_case(candidate)
 
         logger.audit(
             f"Case {candidate['case_id']} finalized: pid={pid} tid={tid} trigger_tid={trigger_tid} "
@@ -930,7 +929,10 @@ class BPFProgram:
     def _bootstrap_processes(self):
         should_bootstrap = (
             self.bootstrap_mode == 'always' or
-            self.bootstrap_mode == 'auto'
+            (
+                self.bootstrap_mode == 'auto' and
+                self.scope_mode == defs.SCOPE_MODE_HOST
+            )
         )
 
         if not should_bootstrap:
