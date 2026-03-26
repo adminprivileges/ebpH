@@ -144,7 +144,7 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
             help='Profiling scope mode: host (default) or container-aware.')
     parser.add_argument('--bootstrap-mode', dest='bootstrap_mode',
             default='auto', choices=['auto', 'always', 'never'],
-            help='Bootstrap existing processes at startup: auto (default), always, or never.')
+            help='Bootstrap existing processes at startup: auto (default: host=yes, container=no), always, or never.')
 
     parser.add_argument('--context-enabled', dest='context_enabled', action='store_true',
             help='Enable context-stage adjudication for variable 2 pipeline.')
