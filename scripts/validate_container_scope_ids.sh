@@ -51,10 +51,19 @@ if [[ -z "$P1A" || -z "$P1B" || -z "$P2A" || -z "$P2B" ]]; then
 fi
 
 echo "[2/4] Resolving ebph scopes from ebph ps -t ..."
-S1A="$(pid_scope "$P1A")"
-S1B="$(pid_scope "$P1B")"
-S2A="$(pid_scope "$P2A")"
-S2B="$(pid_scope "$P2B")"
+# Container scope IDs are synced periodically in userspace; allow brief retry
+# window to avoid transient mixed host/container scope readings.
+for _attempt in $(seq 1 10); do
+  S1A="$(pid_scope "$P1A")"
+  S1B="$(pid_scope "$P1B")"
+  S2A="$(pid_scope "$P2A")"
+  S2B="$(pid_scope "$P2B")"
+
+  if [[ "$S1A" == "$S1B" && "$S2A" == "$S2B" && "$S1A" != "$S2A" ]]; then
+    break
+  fi
+  sleep 1
+done
 
 echo "Container $C1 PIDs $P1A/$P1B => scopes $S1A/$S1B"
 echo "Container $C2 PIDs $P2A/$P2B => scopes $S2A/$S2B"
@@ -87,13 +96,14 @@ if [[ "$HOST_SCOPE" != "0" ]]; then
 fi
 
 echo "[extra] Verifying host/container same executable split by scope..."
-if ! sudo ebph ps -p | awk '$1=="/usr/bin/sleep" {print $2}' | grep -qx "0"; then
-  echo "FAIL: did not find /usr/bin/sleep profile with host scope 0." >&2
+SLEEP_SCOPES="$(sudo ebph ps -p | awk '$1=="sleep" || $1=="/usr/bin/sleep" {print $2}')"
+if ! printf '%s\n' "$SLEEP_SCOPES" | grep -qx "0"; then
+  echo "FAIL: did not find sleep profile with host scope 0." >&2
   kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
   exit 1
 fi
-if ! sudo ebph ps -p | awk '$1=="/usr/bin/sleep" {print $2}' | grep -qx "$S1A"; then
-  echo "FAIL: did not find /usr/bin/sleep profile with container scope $S1A." >&2
+if ! printf '%s\n' "$SLEEP_SCOPES" | grep -qx "$S1A"; then
+  echo "FAIL: did not find sleep profile with container scope $S1A." >&2
   kill "$HOST_SLEEP_PID" >/dev/null 2>&1 || true
   exit 1
 fi

@@ -54,6 +54,13 @@ class EBPHDaemon(DaemonMixin):
         self.auto_load = not args.noload
         self.scope_mode = args.scope_mode
         self.bootstrap_mode = args.bootstrap_mode
+        self.context_enabled = args.context_enabled
+        self.scope_baseline_mature = args.scope_baseline_mature
+        self.window_inactivity_timeout = args.window_inactivity_timeout
+        self.window_hard_max = args.window_hard_max
+        self.stage1_t_candidate = args.stage1_t_candidate
+        self.stage1_t_high = args.stage1_t_high
+        self.stage2_c_downgrade = args.stage2_c_downgrade
 
     def tick(self) -> None:
         """
@@ -91,7 +98,14 @@ class EBPHDaemon(DaemonMixin):
         self.bpf_program = BPFProgram(debug=self.debug,
                 log_sequences=self.log_sequences, auto_save=self.auto_save,
                 auto_load=self.auto_load, scope_mode=self.scope_mode,
-                bootstrap_mode=self.bootstrap_mode)
+                bootstrap_mode=self.bootstrap_mode,
+                context_enabled=self.context_enabled,
+                scope_baseline_mature=self.scope_baseline_mature,
+                window_inactivity_timeout=self.window_inactivity_timeout,
+                window_hard_max=self.window_hard_max,
+                stage1_t_candidate=self.stage1_t_candidate,
+                stage1_t_high=self.stage1_t_high,
+                stage2_c_downgrade=self.stage2_c_downgrade)
         global bpf_program
         bpf_program = self.bpf_program
 
@@ -131,6 +145,26 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
     parser.add_argument('--bootstrap-mode', dest='bootstrap_mode',
             default='auto', choices=['auto', 'always', 'never'],
             help='Bootstrap existing processes at startup: auto (default: host=yes, container=no), always, or never.')
+
+    parser.add_argument('--context-enabled', dest='context_enabled', action='store_true',
+            help='Enable context-stage adjudication for variable 2 pipeline.')
+    parser.add_argument('--scope-baseline-mature', dest='scope_baseline_mature', default='true', choices=['true', 'false'],
+            help='Run-level baseline maturity constant used for routing in candidate records.')
+    parser.add_argument('--window-inactivity-timeout', dest='window_inactivity_timeout', type=float,
+            default=defs.WINDOW_INACTIVITY_TIMEOUT_SEC,
+            help='Process-window inactivity timeout in seconds.')
+    parser.add_argument('--window-hard-max', dest='window_hard_max', type=float,
+            default=defs.WINDOW_HARD_MAX_SEC,
+            help='Process-window hard max duration in seconds.')
+    parser.add_argument('--stage1-t-candidate', dest='stage1_t_candidate', type=float,
+            default=defs.STAGE1_T_CANDIDATE,
+            help='Stage-one candidate threshold.')
+    parser.add_argument('--stage1-t-high', dest='stage1_t_high', type=float,
+            default=defs.STAGE1_T_HIGH,
+            help='Stage-one high threshold.')
+    parser.add_argument('--stage2-c-downgrade', dest='stage2_c_downgrade', type=float,
+            default=defs.STAGE2_C_DOWNGRADE,
+            help='Minimum confidence for high-band downgrade.')
     # Quick testing mode. This option sets --nodaemon --nolog --nosave --noload flags.
     parser.add_argument('--testing', action='store_true',
             help=argparse.SUPPRESS)
@@ -145,6 +179,7 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
         args.noload = True
 
     args.scope_mode = defs.SCOPE_MODE_HOST if args.scope_mode == 'host' else defs.SCOPE_MODE_CONTAINER
+    args.scope_baseline_mature = args.scope_baseline_mature == 'true'
 
     # Check for root
     if not (os.geteuid() == 0):

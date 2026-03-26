@@ -92,6 +92,7 @@ LOG_DIR = '/var/log/ebpH'
 PIDFILE = '/run/ebpH.pid'
 
 EBPH_DATA_DIR = '/var/lib/ebpH/profiles'
+REPLAY_ROOT_DIR = '/var/lib/ebpH/replay'
 
 EBPH_PORT = 1337
 
@@ -100,6 +101,15 @@ EBPH_SOCK = '/var/run/ebpH.sock'
 PROFILE_SAVE_INTERVAL = 10000
 
 TICK_SLEEP = 0.1
+
+# Variable 2 context pipeline defaults
+WINDOW_INACTIVITY_TIMEOUT_SEC = 3.0
+WINDOW_HARD_MAX_SEC = 30.0
+PROFILE_SUMMARY_WINDOW = 50
+
+STAGE1_T_CANDIDATE = 2.0
+STAGE1_T_HIGH = 8.0
+STAGE2_C_DOWNGRADE = 0.8
 
 
 def init(args: Namespace) -> None:
@@ -115,6 +125,11 @@ def init(args: Namespace) -> None:
         os.makedirs(EBPH_DATA_DIR, mode=0o700, exist_ok=True)
     except OSError:
         os.chmod(EBPH_DATA_DIR, mode=0o700)
+
+    try:
+        os.makedirs(REPLAY_ROOT_DIR, mode=0o700, exist_ok=True)
+    except OSError:
+        os.chmod(REPLAY_ROOT_DIR, mode=0o700)
 
     # Make policy_directory or set permissions of existing policy_directory
     try:
