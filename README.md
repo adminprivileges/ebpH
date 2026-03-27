@@ -101,7 +101,10 @@ ALLOW_ROOT=1 DO_SYSTEMD=0 bash ./scripts/bootstrap.sh
 1. Run `$ sudo ebphd start` to start the daemon.
    - Host-compatible mode (default): `$ sudo ebphd start` or `$ sudo ebphd --scope-mode host start`
    - Container-aware mode: `$ sudo ebphd --scope-mode container start`
-   - Disable Bootstrap (for experiments): `$ sudo ebphd --bootstrap-mode never`
+   - Bootstrap behavior:
+     - `--bootstrap-mode auto` (default): host scope => bootstrap enabled, container scope => bootstrap disabled
+     - `--bootstrap-mode always`: bootstrap enabled
+     - `--bootstrap-mode never`: bootstrap disabled (recommended for controlled experiment replays)
 1. Run `$ sudo ebph admin status` to check daemon status.
 1. Run `$ sudo ebph ps` to check monitored processes.
 1. Run `$ sudo ebph ps -p` to list all active profiles.
@@ -124,6 +127,68 @@ In container mode, the same executable can have distinct profiles across differe
 In container mode, two processes running the same executable within the same container are expected to share one profile because both `scope_id` and `executable_identity` match.
 
 For bootstrap of already-running processes, executable identity is resolved via `/proc/<pid>/exe` first (with path-based fallback) to avoid host-path assumptions for containerized filesystems.
+
+### Variable 2 context pipeline (userspace)
+
+The var2-context branch adds a userspace decision layer on top of existing ebpH detector signals.
+
+- Stage 1 remains based on existing ebpH anomaly/profile/process signals.
+- Process-window cases are opened from anomaly activity, aggregated in userspace, scored, and routed by a three-band policy (`low`, `candidate`, `high`).
+- Replay artifacts are written for offline reproducibility and cross-condition reruns.
+
+Useful daemon flags:
+
+- `--context-enabled`
+- `--scope-baseline-mature true|false`
+- `--window-inactivity-timeout <seconds>`
+- `--window-hard-max <seconds>`
+- `--stage1-t-candidate <float>`
+- `--stage1-t-high <float>`
+- `--stage2-c-downgrade <float>`
+
+Daemon flag reference for recent scope/context additions:
+
+- `--scope-mode host|container`
+  - Selects host-compatible profiling or container-aware profiling.
+- `--bootstrap-mode auto|always|never`
+  - `auto`: bootstrap host scope, skip bootstrap in container scope.
+  - `always`: bootstrap regardless of scope mode.
+  - `never`: skip bootstrap regardless of scope mode.
+- `--context-enabled`
+  - Enables the userspace variable-2 context adjudication path.
+- `--scope-baseline-mature true|false`
+  - Run-level maturity constant stamped into each case for routing/analysis.
+- `--window-inactivity-timeout <seconds>`
+  - Closes an active process-window after no anomaly activity for this duration.
+- `--window-hard-max <seconds>`
+  - Hard cap on process-window duration even if anomaly signals continue.
+- `--stage1-t-candidate <float>`
+  - Lower stage-1 threshold for entering the candidate band.
+- `--stage1-t-high <float>`
+  - Upper stage-1 threshold for entering the high band.
+- `--stage2-c-downgrade <float>`
+  - Minimum adjudicator confidence required to downgrade a high-band default detection.
+
+Replay/session artifacts:
+
+- Root directory: `/var/lib/ebpH/replay`
+- Each run creates `session-<timestamp>/session.json`
+- Finalized cases are appended to `session-<timestamp>/cases.jsonl`
+
+Example container-scope context run (foreground):
+
+```bash
+sudo ebphd --nodaemon \
+  --scope-mode container \
+  --bootstrap-mode never \
+  --context-enabled \
+  --scope-baseline-mature true \
+  --window-inactivity-timeout 3.0 \
+  --window-hard-max 30.0 \
+  --stage1-t-candidate 2.0 \
+  --stage1-t-high 8.0 \
+  --stage2-c-downgrade 0.8
+```
 
 Or, with systemd:
 
