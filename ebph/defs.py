@@ -111,6 +111,14 @@ STAGE1_T_CANDIDATE = 2.0
 STAGE1_T_HIGH = 8.0
 STAGE2_C_DOWNGRADE = 0.8
 
+# Stage-two adjudicator defaults (M7 local-first PoC)
+ADJUDICATOR_MODEL_ENABLED = False
+ADJUDICATOR_BACKEND = 'ollama'
+OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+OLLAMA_MODEL = 'tinyllama:1.1b-chat-v1.0-q4_K_M'
+OLLAMA_TIMEOUT_SEC = 1.0
+OLLAMA_KEEP_ALIVE = '5m'
+
 
 def init(args: Namespace) -> None:
     """
