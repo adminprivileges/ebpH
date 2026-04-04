@@ -49,7 +49,7 @@ class ContextPipeline:
         adjudicator_backend: str = 'stub',
         adjudicator_model_enabled: bool = False,
         ollama_base_url: str = 'http://127.0.0.1:11434',
-        ollama_model: str = 'tinyllama:1.1b-chat-v1.0-q4_K_M',
+        ollama_model: str = 'tinyllama:1.1b',
         ollama_timeout_sec: float = 1.0,
         ollama_keep_alive: str = '5m',
     ) -> None:

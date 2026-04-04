@@ -218,7 +218,7 @@ Or, with systemd:
 1. Start Ollama locally and pull a model (example):
    ```bash
    ollama serve
-   ollama pull tinyllama:latest
+   ollama pull tinyllama:1.1b
    ```
 2. Run ebpH in foreground with model-backed adjudication:
    ```bash
@@ -227,7 +227,7 @@ Or, with systemd:
      --adjudicator-model-enabled \
      --adjudicator-backend ollama \
      --ollama-base-url http://127.0.0.1:11434 \
-     --ollama-model tinyllama:latest \
+     --ollama-model tinyllama:1.1b \
      --ollama-timeout-sec 10 \
      --ollama-keep-alive 5m
    ```
