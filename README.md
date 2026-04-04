@@ -145,6 +145,12 @@ Useful daemon flags:
 - `--stage1-t-candidate <float>`
 - `--stage1-t-high <float>`
 - `--stage2-c-downgrade <float>`
+- `--adjudicator-model-enabled`
+- `--adjudicator-backend ollama|stub`
+- `--ollama-base-url <url>`
+- `--ollama-model <name>`
+- `--ollama-timeout-sec <seconds>`
+- `--ollama-keep-alive <value>`
 
 Daemon flag reference for recent scope/context additions:
 
@@ -168,12 +174,25 @@ Daemon flag reference for recent scope/context additions:
   - Upper stage-1 threshold for entering the high band.
 - `--stage2-c-downgrade <float>`
   - Minimum adjudicator confidence required to downgrade a high-band default detection.
+- `--adjudicator-model-enabled`
+  - Enables model-backed stage-2 adjudication. Defaults to disabled.
+- `--adjudicator-backend ollama|stub`
+  - Selects model backend (`ollama`) or deterministic local fallback (`stub`).
+- `--ollama-base-url <url>`
+  - Local Ollama sidecar base URL. Default: `http://127.0.0.1:11434`.
+- `--ollama-model <name>`
+  - Ollama model tag for stage-2 adjudication.
+- `--ollama-timeout-sec <seconds>`
+  - HTTP timeout for the local Ollama call.
+- `--ollama-keep-alive <value>`
+  - Ollama keep_alive setting forwarded in request body.
 
 Replay/session artifacts:
 
 - Root directory: `/var/lib/ebpH/replay`
 - Each run creates `session-<timestamp>/session.json`
 - Finalized cases are appended to `session-<timestamp>/cases.jsonl`
+- `session.json` includes adjudicator metadata (`adjudicator_backend`, `adjudicator_model_enabled`, `ollama_model`, `ollama_base_url`) for replay reproducibility.
 
 Example container-scope context run (foreground):
 
@@ -193,3 +212,32 @@ sudo ebphd --nodaemon \
 Or, with systemd:
 
 1. Run `$ sudo systemctl start ebphd` to start the daemon if not already running.
+
+### Ollama stage-2 adjudicator quick validation
+
+1. Start Ollama locally and pull a model (example):
+   ```bash
+   ollama serve
+   ollama pull tinyllama:1.1b
+   ```
+2. Run ebpH in foreground with model-backed adjudication:
+   ```bash
+   sudo ebphd --nodaemon \
+     --context-enabled \
+     --adjudicator-model-enabled \
+     --adjudicator-backend ollama \
+     --ollama-base-url http://127.0.0.1:11434 \
+     --ollama-model tinyllama:1.1b \
+     --ollama-timeout-sec 10 \
+     --ollama-keep-alive 5m
+   ```
+3. Generate a test anomaly workload, then inspect replay output:
+   ```bash
+   latest_session="$(ls -1dt /var/lib/ebpH/replay/session-* | head -n1)"
+   jq . "$latest_session/session.json"
+   tail -n 5 "$latest_session/cases.jsonl" | jq .
+   ```
+4. Expected checks:
+   - Success path: `decision.adjudicator_called=true`, `decision.adjudicator_error=""`
+   - Candidate-band failure fallback: `reason_code="adjudicator_error_band2_default"` and `final_binary_decision="not_detected"`
+   - High-band failure fallback: `reason_code="adjudicator_error_band3_default"` and `final_binary_decision="detected"`

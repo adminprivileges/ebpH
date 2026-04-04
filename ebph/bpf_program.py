@@ -84,7 +84,13 @@ class BPFProgram:
                  window_hard_max: float = defs.WINDOW_HARD_MAX_SEC,
                  stage1_t_candidate: float = defs.STAGE1_T_CANDIDATE,
                  stage1_t_high: float = defs.STAGE1_T_HIGH,
-                 stage2_c_downgrade: float = defs.STAGE2_C_DOWNGRADE):
+                 stage2_c_downgrade: float = defs.STAGE2_C_DOWNGRADE,
+                 adjudicator_model_enabled: bool = defs.ADJUDICATOR_MODEL_ENABLED,
+                 adjudicator_backend: str = defs.ADJUDICATOR_BACKEND,
+                 ollama_base_url: str = defs.OLLAMA_BASE_URL,
+                 ollama_model: str = defs.OLLAMA_MODEL,
+                 ollama_timeout_sec: float = defs.OLLAMA_TIMEOUT_SEC,
+                 ollama_keep_alive: str = defs.OLLAMA_KEEP_ALIVE):
         self.bpf = None
         self.usdt_contexts = []
         self.seqstack_inner_bpf = None
@@ -105,6 +111,8 @@ class BPFProgram:
         self.stage1_t_candidate = stage1_t_candidate
         self.stage1_t_high = stage1_t_high
         self.stage2_c_downgrade = stage2_c_downgrade
+        self.adjudicator_model_enabled = adjudicator_model_enabled
+        self.adjudicator_backend = adjudicator_backend
 
         self.profile_key_to_exe = defaultdict(lambda: '[unknown]')
         self.syscall_number_to_name = defaultdict(lambda: '[unknown]')
@@ -119,6 +127,12 @@ class BPFProgram:
             t_high=self.stage1_t_high,
             c_downgrade=self.stage2_c_downgrade,
             profile_summary_window=defs.PROFILE_SUMMARY_WINDOW,
+            adjudicator_backend=self.adjudicator_backend,
+            adjudicator_model_enabled=self.adjudicator_model_enabled,
+            ollama_base_url=ollama_base_url,
+            ollama_model=ollama_model,
+            ollama_timeout_sec=ollama_timeout_sec,
+            ollama_keep_alive=ollama_keep_alive,
         )
 
         self._set_cflags()

@@ -5,7 +5,9 @@ import statistics
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, List, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
+
+from ebph.ollama_client import OllamaAdjudicatorClient, OllamaAdjudicatorError
 
 
 @dataclass
@@ -18,6 +20,10 @@ class SessionMetadata:
     t_candidate: float
     t_high: float
     c_downgrade: float
+    adjudicator_backend: str
+    adjudicator_model_enabled: bool
+    ollama_model: str
+    ollama_base_url: str
 
 
 class ContextPipeline:
@@ -40,6 +46,12 @@ class ContextPipeline:
         t_high: float,
         c_downgrade: float,
         profile_summary_window: int,
+        adjudicator_backend: str = 'stub',
+        adjudicator_model_enabled: bool = False,
+        ollama_base_url: str = 'http://127.0.0.1:11434',
+        ollama_model: str = 'tinyllama:1.1b',
+        ollama_timeout_sec: float = 1.0,
+        ollama_keep_alive: str = '5m',
     ) -> None:
         self.scope_mode = scope_mode
         self.context_enabled = context_enabled
@@ -47,6 +59,16 @@ class ContextPipeline:
         self.t_candidate = t_candidate
         self.t_high = t_high
         self.c_downgrade = c_downgrade
+        self.adjudicator_backend = adjudicator_backend
+        self.adjudicator_model_enabled = adjudicator_model_enabled
+        self.ollama_client: Optional[OllamaAdjudicatorClient] = None
+        if self.context_enabled and self.adjudicator_model_enabled and self.adjudicator_backend == 'ollama':
+            self.ollama_client = OllamaAdjudicatorClient(
+                base_url=ollama_base_url,
+                model=ollama_model,
+                timeout_sec=ollama_timeout_sec,
+                keep_alive=ollama_keep_alive,
+            )
 
         now_ns = time.time_ns()
         self.session_id = f'session-{now_ns}'
@@ -71,6 +93,10 @@ class ContextPipeline:
                 t_candidate=t_candidate,
                 t_high=t_high,
                 c_downgrade=c_downgrade,
+                adjudicator_backend=adjudicator_backend,
+                adjudicator_model_enabled=adjudicator_model_enabled,
+                ollama_model=ollama_model,
+                ollama_base_url=ollama_base_url,
             )
         )
 
@@ -160,6 +186,19 @@ class ContextPipeline:
             'error': False,
         }
 
+    def _run_adjudicator(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        if self.ollama_client is None:
+            return self.adjudicate_stub(candidate)
+
+        out = self.ollama_client.adjudicate(candidate)
+        return {
+            'decision': 'detected' if out['detected'] else 'not_detected',
+            'confidence': float(out['confidence']),
+            'reason_code': out['reason_code'],
+            'rationale': out['rationale'],
+            'error': False,
+        }
+
     def finalize_decision(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         band = candidate['routing']['band']
         adjudicator_called = False
@@ -168,6 +207,8 @@ class ContextPipeline:
         adjudicator_confidence = 0.0
         reason_code = 'none'
         downgrade_applied = False
+        adjudicator_backend = self.adjudicator_backend if self.ollama_client is not None else 'stub'
+        adjudicator_error = ''
 
         if band == 'low':
             final = 'not_detected'
@@ -179,15 +220,16 @@ class ContextPipeline:
                 adjudicator_called = True
                 t0 = time.time_ns()
                 try:
-                    adj = self.adjudicate_stub(candidate)
+                    adj = self._run_adjudicator(candidate)
                     adjudicator_result = adj['decision']
                     adjudicator_confidence = float(adj['confidence'])
                     reason_code = adj['reason_code']
                     final = adj['decision']
-                except Exception:
+                except (OllamaAdjudicatorError, Exception) as e:
                     adjudicator_result = 'error'
                     reason_code = 'adjudicator_error_band2_default'
                     final = 'not_detected'
+                    adjudicator_error = str(e)
                 adjudicator_ms = (time.time_ns() - t0) / 1e6
         else:
             final = 'detected'
@@ -195,7 +237,7 @@ class ContextPipeline:
                 adjudicator_called = True
                 t0 = time.time_ns()
                 try:
-                    adj = self.adjudicate_stub(candidate)
+                    adj = self._run_adjudicator(candidate)
                     adjudicator_result = adj['decision']
                     adjudicator_confidence = float(adj['confidence'])
                     reason_code = adj['reason_code']
@@ -206,18 +248,21 @@ class ContextPipeline:
                     ):
                         final = 'not_detected'
                         downgrade_applied = True
-                except Exception:
+                except (OllamaAdjudicatorError, Exception) as e:
                     adjudicator_result = 'error'
                     reason_code = 'adjudicator_error_band3_default'
                     final = 'detected'
+                    adjudicator_error = str(e)
                 adjudicator_ms = (time.time_ns() - t0) / 1e6
 
         candidate['decision'].update(
             {
                 'adjudicator_called': adjudicator_called,
+                'adjudicator_backend': adjudicator_backend,
                 'adjudicator_result': adjudicator_result,
                 'adjudicator_confidence': adjudicator_confidence,
                 'reason_code': reason_code,
+                'adjudicator_error': adjudicator_error,
                 'downgrade_applied': downgrade_applied,
                 'final_binary_decision': final,
             }

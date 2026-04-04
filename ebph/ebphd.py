@@ -61,6 +61,12 @@ class EBPHDaemon(DaemonMixin):
         self.stage1_t_candidate = args.stage1_t_candidate
         self.stage1_t_high = args.stage1_t_high
         self.stage2_c_downgrade = args.stage2_c_downgrade
+        self.adjudicator_model_enabled = args.adjudicator_model_enabled
+        self.adjudicator_backend = args.adjudicator_backend
+        self.ollama_base_url = args.ollama_base_url
+        self.ollama_model = args.ollama_model
+        self.ollama_timeout_sec = args.ollama_timeout_sec
+        self.ollama_keep_alive = args.ollama_keep_alive
 
     def tick(self) -> None:
         """
@@ -105,7 +111,13 @@ class EBPHDaemon(DaemonMixin):
                 window_hard_max=self.window_hard_max,
                 stage1_t_candidate=self.stage1_t_candidate,
                 stage1_t_high=self.stage1_t_high,
-                stage2_c_downgrade=self.stage2_c_downgrade)
+                stage2_c_downgrade=self.stage2_c_downgrade,
+                adjudicator_model_enabled=self.adjudicator_model_enabled,
+                adjudicator_backend=self.adjudicator_backend,
+                ollama_base_url=self.ollama_base_url,
+                ollama_model=self.ollama_model,
+                ollama_timeout_sec=self.ollama_timeout_sec,
+                ollama_keep_alive=self.ollama_keep_alive)
         global bpf_program
         bpf_program = self.bpf_program
 
@@ -165,6 +177,24 @@ def parse_args(args: List[str] = []) -> argparse.Namespace:
     parser.add_argument('--stage2-c-downgrade', dest='stage2_c_downgrade', type=float,
             default=defs.STAGE2_C_DOWNGRADE,
             help='Minimum confidence for high-band downgrade.')
+    parser.add_argument('--adjudicator-model-enabled', dest='adjudicator_model_enabled', action='store_true',
+            default=defs.ADJUDICATOR_MODEL_ENABLED,
+            help='Enable model-backed stage-two adjudication.')
+    parser.add_argument('--adjudicator-backend', dest='adjudicator_backend',
+            default=defs.ADJUDICATOR_BACKEND, choices=['ollama', 'stub'],
+            help='Stage-two adjudicator backend.')
+    parser.add_argument('--ollama-base-url', dest='ollama_base_url',
+            default=defs.OLLAMA_BASE_URL,
+            help='Local Ollama sidecar base URL.')
+    parser.add_argument('--ollama-model', dest='ollama_model',
+            default=defs.OLLAMA_MODEL,
+            help='Ollama model name for adjudication.')
+    parser.add_argument('--ollama-timeout-sec', dest='ollama_timeout_sec', type=float,
+            default=defs.OLLAMA_TIMEOUT_SEC,
+            help='Timeout for Ollama adjudication request in seconds.')
+    parser.add_argument('--ollama-keep-alive', dest='ollama_keep_alive',
+            default=defs.OLLAMA_KEEP_ALIVE,
+            help='Ollama keep_alive value.')
     # Quick testing mode. This option sets --nodaemon --nolog --nosave --noload flags.
     parser.add_argument('--testing', action='store_true',
             help=argparse.SUPPRESS)
