@@ -64,8 +64,8 @@ BPF_HASH(profile_scope_ids, u64, u64, EBPH_MAX_PROFILES);
 /* Profile Key -> Executable Identity */
 BPF_HASH(profile_executable_keys, u64, u64, EBPH_MAX_PROFILES);
 
-/* Known container cgroup IDs -> 1 */
-BPF_HASH(container_scope_ids, u64, u8, EBPH_MAX_PROCESSES);
+/* Runtime container scope IDs -> persistent scope keys */
+BPF_HASH(container_scope_ids, u64, u64, EBPH_MAX_PROCESSES);
 
 /* Profile Key -> Syscall Flags */
 BPF_F_TABLE("hash", u64, struct ebph_flags_t, training_data, EBPH_MAX_PROFILES,
@@ -291,8 +291,8 @@ static __always_inline u64 ebph_current_scope_id()
 {
     if (EBPH_SCOPE_MODE == EBPH_SCOPE_MODE_CONTAINER) {
         u64 cgroup_id = bpf_get_current_cgroup_id();
-        u8 *is_container = container_scope_ids.lookup(&cgroup_id);
-        if (!is_container) {
+        u64 *persistent_scope_key = container_scope_ids.lookup(&cgroup_id);
+        if (!persistent_scope_key) {
             return 0;
         }
         return cgroup_id;
@@ -300,20 +300,32 @@ static __always_inline u64 ebph_current_scope_id()
     return 0;
 }
 
+static __always_inline u64 ebph_current_persistent_scope_key(u64 scope_id)
+{
+    if (EBPH_SCOPE_MODE == EBPH_SCOPE_MODE_CONTAINER) {
+        u64 *persistent_scope_key = container_scope_ids.lookup(&scope_id);
+        if (!persistent_scope_key) {
+            return 0;
+        }
+        return *persistent_scope_key;
+    }
+    return scope_id;
+}
+
 static __always_inline u64 ebph_compose_profile_key(u64 scope_id,
                                                     u64 executable_key);
-static __always_inline int ebph_do_exec_common(u64 profile_key, u64 scope_id,
-                                               u64 executable_key, u32 pid,
-                                               u32 tgid, const char *pathname);
+static __always_inline int ebph_do_exec_common(
+    u64 profile_key, u64 scope_id, u64 persistent_scope_key,
+    u64 executable_key, u32 pid, u32 tgid, const char *pathname);
 
 static __always_inline u64 ebph_compose_profile_key(u64 scope_id, u64 executable_key)
 {
     return executable_key ^ (scope_id * 0x9e3779b97f4a7c15ULL);
 }
 
-static __always_inline int ebph_do_exec_common(u64 profile_key, u64 scope_id,
-                                               u64 executable_key, u32 pid,
-                                               u32 tgid, const char *pathname)
+static __always_inline int ebph_do_exec_common(
+    u64 profile_key, u64 scope_id, u64 persistent_scope_key,
+    u64 executable_key, u32 pid, u32 tgid, const char *pathname)
 {
     /* Create or look up task_state. */
     struct ebph_task_state_t *task_state =
@@ -326,7 +338,8 @@ static __always_inline int ebph_do_exec_common(u64 profile_key, u64 scope_id,
     // Does the profile already exist? Important for logging purposes
     u8 profile_exists = profiles.lookup(&profile_key) ? 1 : 0;
 
-    struct ebph_profile_t *profile = ebph_new_profile(profile_key, scope_id, executable_key, pathname);
+    struct ebph_profile_t *profile = ebph_new_profile(
+        profile_key, scope_id, persistent_scope_key, executable_key, pathname);
     if (!profile) {
         // TODO: log error
         return 1;
@@ -445,7 +458,8 @@ LSM_PROBE(bprm_check_security, struct linux_binprm *bprm)
         ((u64)new_encode_dev(bprm->file->f_path.dentry->d_inode->i_sb->s_dev)
          << 32);
     u64 scope_id = ebph_current_scope_id();
-    u64 profile_key = ebph_compose_profile_key(scope_id, executable_key);
+    u64 persistent_scope_key = ebph_current_persistent_scope_key(scope_id);
+    u64 profile_key = ebph_compose_profile_key(persistent_scope_key, executable_key);
 
     u32 pid  = bpf_get_current_pid_tgid();
     u32 tgid = bpf_get_current_pid_tgid() >> 32;
@@ -453,7 +467,8 @@ LSM_PROBE(bprm_check_security, struct linux_binprm *bprm)
     // TODO: change this to bpf_d_path when it comes out (Linux 5.9?)
     const char *pathname = bprm->file->f_path.dentry->d_name.name;
 
-    ebph_do_exec_common(profile_key, scope_id, executable_key, pid, tgid, pathname);
+    ebph_do_exec_common(profile_key, scope_id, persistent_scope_key,
+                        executable_key, pid, tgid, pathname);
 
     return ebph_do_lsm_common(EBPH_BPRM_CHECK_SECURITY, EBPH_TOLERANCE_LOW);
 }
@@ -1313,7 +1328,9 @@ int command_bootstrap_process(struct pt_regs *ctx)
         goto out;
     }
 
-    ebph_do_exec_common(profile_key, scope_id, executable_key, pid, tgid, pathname);
+    ebph_do_exec_common(profile_key, scope_id,
+                        ebph_current_persistent_scope_key(scope_id),
+                        executable_key, pid, tgid, pathname);
 out:
     bpf_probe_write_user(rc_p, &rc, sizeof(rc));
 
@@ -1463,7 +1480,8 @@ static __always_inline void ebph_set_normal_time(struct ebph_profile_t *profile)
 
 /* Create a new profile at @profile_key. */
 static __always_inline struct ebph_profile_t *ebph_new_profile(
-    u64 profile_key, u64 scope_id, u64 executable_key, const char *pathname)
+    u64 profile_key, u64 scope_id, u64 persistent_scope_key, u64 executable_key,
+    const char *pathname)
 {
     struct ebph_profile_t *existing_profile = profiles.lookup(&profile_key);
     if (existing_profile)
@@ -1482,7 +1500,7 @@ static __always_inline struct ebph_profile_t *ebph_new_profile(
 
     ebph_log_new_profile(profile_key, scope_id, pathname);
 
-    profile_scope_ids.update(&profile_key, &scope_id);
+    profile_scope_ids.update(&profile_key, &persistent_scope_key);
     profile_executable_keys.update(&profile_key, &executable_key);
 
     return profiles.lookup_or_try_init(&profile_key, &profile);

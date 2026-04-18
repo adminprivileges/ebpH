@@ -35,7 +35,7 @@ from ratelimit import limits
 
 from ebph.libebph import Lib
 from ebph.logger import get_logger
-from ebph.utils import running_processes, list_container_scope_ids
+from ebph.utils import running_processes, list_container_scope_bindings
 from ebph.structs import (
     EBPHProfileStruct,
     EBPH_SETTINGS,
@@ -965,9 +965,8 @@ class BPFProgram:
         try:
             scope_map = self.bpf['container_scope_ids']
             scope_map.clear()
-            one = ct.c_ubyte(1)
-            for scope_id in list_container_scope_ids():
-                scope_map[ct.c_uint64(scope_id)] = one
+            for runtime_scope_id, persistent_scope_key in list_container_scope_bindings().items():
+                scope_map[ct.c_uint64(runtime_scope_id)] = ct.c_uint64(persistent_scope_key)
         except Exception as e:
             logger.debug('Unable to sync container scope IDs', exc_info=e)
 

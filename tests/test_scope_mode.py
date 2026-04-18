@@ -5,6 +5,9 @@ from ebph.utils import (
     calculate_profile_key_from_stat,
     get_process_executable_key,
     _is_container_cgroup_path,
+    _build_container_persistent_identity,
+    _hash_persistent_scope_identity,
+    list_container_scope_bindings,
     list_container_scope_ids,
 )
 
@@ -70,6 +73,7 @@ def test_is_container_cgroup_path_detection():
 
 def test_list_container_scope_ids(monkeypatch):
     import io
+    import json
     import ebph.utils as utils
 
     class _Result:
@@ -80,10 +84,28 @@ def test_list_container_scope_ids(monkeypatch):
     def fake_run(cmd, check, stdout, stderr, text):
         if cmd[:3] == ['docker', 'ps', '-q']:
             return _Result(0, 'cid1\ncid2\n')
-        if cmd[:3] == ['docker', 'inspect', '-f'] and cmd[-1] == 'cid1':
-            return _Result(0, '123\n')
-        if cmd[:3] == ['docker', 'inspect', '-f'] and cmd[-1] == 'cid2':
-            return _Result(0, '456\n')
+        if cmd[:2] == ['docker', 'inspect'] and cmd[-1] == 'cid1':
+            payload = [{
+                'Id': 'cid1',
+                'Name': '/proj-web-1',
+                'Config': {
+                    'Labels': {
+                        'com.docker.compose.project': 'proj',
+                        'com.docker.compose.service': 'web',
+                        'com.docker.compose.container-number': '1',
+                    }
+                },
+                'State': {'Pid': 123},
+            }]
+            return _Result(0, json.dumps(payload))
+        if cmd[:2] == ['docker', 'inspect'] and cmd[-1] == 'cid2':
+            payload = [{
+                'Id': 'cid2',
+                'Name': '/proj-db-1',
+                'Config': {'Labels': {}},
+                'State': {'Pid': 456},
+            }]
+            return _Result(0, json.dumps(payload))
         return _Result(1, '')
 
     def fake_open(path, mode='r', *args, **kwargs):
@@ -108,4 +130,37 @@ def test_list_container_scope_ids(monkeypatch):
     monkeypatch.setattr(utils, 'open', fake_open)
     monkeypatch.setattr(utils.os, 'stat', fake_stat)
 
+    bindings = list_container_scope_bindings()
+    assert set(bindings.keys()) == {111, 222}
+    assert bindings[111] == _hash_persistent_scope_identity('proj|web|1')
+    assert bindings[222] == _hash_persistent_scope_identity('proj-db-1')
     assert list_container_scope_ids() == {111, 222}
+
+
+def test_build_container_persistent_identity_priority():
+    compose_container = {
+        'Id': 'aaa',
+        'Name': '/stack-web-1',
+        'Config': {
+            'Labels': {
+                'com.docker.compose.project': 'stack',
+                'com.docker.compose.service': 'web',
+                'com.docker.compose.container-number': '1',
+            }
+        },
+    }
+    assert _build_container_persistent_identity(compose_container) == 'stack|web|1'
+
+    named_container = {
+        'Id': 'bbb',
+        'Name': '/legacy-container',
+        'Config': {'Labels': {}},
+    }
+    assert _build_container_persistent_identity(named_container) == 'legacy-container'
+
+    id_only_container = {
+        'Id': 'ccc',
+        'Name': '',
+        'Config': {'Labels': {}},
+    }
+    assert _build_container_persistent_identity(id_only_container) == 'ccc'
