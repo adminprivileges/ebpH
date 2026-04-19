@@ -1,4 +1,5 @@
 from ebph import defs
+from ebph.api import API
 from ebph.ebphd import parse_args
 from ebph.utils import (
     compose_profile_key,
@@ -164,3 +165,24 @@ def test_build_container_persistent_identity_priority():
         'Config': {'Labels': {}},
     }
     assert _build_container_persistent_identity(id_only_container) == 'ccc'
+
+
+def test_api_profile_resolution_requires_scope_for_ambiguous_exe():
+    class _FakeProgram:
+        profile_key_to_exe = {101: '/usr/bin/php', 202: '/usr/bin/php'}
+
+        @staticmethod
+        def get_profile_scope_id(key):
+            return {101: 0, 202: 1234}[key]
+
+    original = API.bpf_program
+    try:
+        API.bpf_program = _FakeProgram()
+        try:
+            API._resolve_profile_key_for_exe('/usr/bin/php')
+            assert False, 'Expected ambiguity error'
+        except ValueError:
+            pass
+        assert API._resolve_profile_key_for_exe('/usr/bin/php', scope_id=1234) == 202
+    finally:
+        API.bpf_program = original

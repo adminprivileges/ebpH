@@ -49,6 +49,20 @@ except KeyError:
 class API:
     bpf_program: BPFProgram = None
 
+    @staticmethod
+    def _resolve_profile_key_for_exe(exe: str, scope_id: int = None) -> int:
+        matches = [k for k, v in API.bpf_program.profile_key_to_exe.items() if v == exe]
+        if scope_id is not None:
+            matches = [
+                k for k in matches
+                if API.bpf_program.get_profile_scope_id(k) == scope_id
+            ]
+        if not matches:
+            raise KeyError(exe)
+        if len(matches) > 1:
+            raise ValueError(exe)
+        return matches[0]
+
     @classmethod
     def connect_bpf_program(cls, bpf_program: BPFProgram) -> None:
         cls.bpf_program = bpf_program
@@ -147,15 +161,20 @@ class API:
 
     @staticmethod
     @app.get('/profiles/exe/{exe:path}')
-    def get_profile_by_exe(exe: str) -> Dict:
+    def get_profile_by_exe(exe: str, scope_id: int = Query(default=None)) -> Dict:
         """
         Returns a profile by @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
         try:
-            return API.get_profile_by_key(rev[exe])
-        except KeyError as e:
-            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
+            return API.get_profile_by_key(API._resolve_profile_key_for_exe(exe, scope_id))
+        except KeyError:
+            scope = f' scope={scope_id}' if scope_id is not None else ''
+            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe}{scope} does not exist.')
+        except ValueError:
+            raise HTTPException(
+                HTTPStatus.CONFLICT,
+                f'Multiple profiles exist for {exe}. Specify scope_id or use /profiles/key/{{key}}.'
+            )
         except Exception as e:
             logger.error('', exc_info=e)
             raise HTTPException(HTTPStatus.BAD_REQUEST, f'Error getting profile {exe}.')
@@ -177,15 +196,21 @@ class API:
 
     @staticmethod
     @app.put('/profiles/exe/{exe:path}/normalize')
-    def normalize_profile_by_exe(exe: str) -> Dict:
+    def normalize_profile_by_exe(exe: str, scope_id: int = Query(default=None)) -> Dict:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
         try:
-            return API.normalize_profile_by_key(rev[exe])
-        except KeyError as e:
-            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
+            key = API._resolve_profile_key_for_exe(exe, scope_id)
+            return API.normalize_profile_by_key(key)
+        except KeyError:
+            scope = f' scope={scope_id}' if scope_id is not None else ''
+            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe}{scope} does not exist.')
+        except ValueError:
+            raise HTTPException(
+                HTTPStatus.CONFLICT,
+                f'Multiple profiles exist for {exe}. Specify scope_id or use /profiles/key/{{key}}.'
+            )
         except Exception as e:
             logger.error('', exc_info=e)
             raise HTTPException(HTTPStatus.BAD_REQUEST, f'Error normalizing profile {exe}.')
@@ -222,15 +247,21 @@ class API:
 
     @staticmethod
     @app.put('/profiles/exe/{exe:path}/sensitize')
-    def sensitize_profile_by_exe(exe: str) -> Dict:
+    def sensitize_profile_by_exe(exe: str, scope_id: int = Query(default=None)) -> Dict:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
         try:
-            return API.sensitize_profile_by_key(rev[exe])
-        except KeyError as e:
-            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
+            key = API._resolve_profile_key_for_exe(exe, scope_id)
+            return API.sensitize_profile_by_key(key)
+        except KeyError:
+            scope = f' scope={scope_id}' if scope_id is not None else ''
+            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe}{scope} does not exist.')
+        except ValueError:
+            raise HTTPException(
+                HTTPStatus.CONFLICT,
+                f'Multiple profiles exist for {exe}. Specify scope_id or use /profiles/key/{{key}}.'
+            )
         except Exception as e:
             logger.error('', exc_info=e)
             raise HTTPException(HTTPStatus.BAD_REQUEST, f'Error sensitizing profile {exe}.')
@@ -267,15 +298,21 @@ class API:
 
     @staticmethod
     @app.put('/profiles/exe/{exe:path}/tolerize')
-    def tolerize_profile_by_exe(exe: str) -> Dict:
+    def tolerize_profile_by_exe(exe: str, scope_id: int = Query(default=None)) -> Dict:
         """
         Normalize a profile by its @exe.
         """
-        rev = {v: k for k, v in API.bpf_program.profile_key_to_exe.items()}
         try:
-            return API.tolerize_profile_by_key(rev[exe])
-        except KeyError as e:
-            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe} does not exist.')
+            key = API._resolve_profile_key_for_exe(exe, scope_id)
+            return API.tolerize_profile_by_key(key)
+        except KeyError:
+            scope = f' scope={scope_id}' if scope_id is not None else ''
+            raise HTTPException(HTTPStatus.NOT_FOUND, f'Profile {exe}{scope} does not exist.')
+        except ValueError:
+            raise HTTPException(
+                HTTPStatus.CONFLICT,
+                f'Multiple profiles exist for {exe}. Specify scope_id or use /profiles/key/{{key}}.'
+            )
         except Exception as e:
             logger.error('', exc_info=e)
             raise HTTPException(HTTPStatus.BAD_REQUEST, f'Error tolerizing profile {exe}.')

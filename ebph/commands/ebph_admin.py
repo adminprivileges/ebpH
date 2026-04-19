@@ -104,7 +104,34 @@ def set(args: Namespace) -> None:
 @command('normalize')
 def normalize(args: Namespace) -> None:
     if args.profile:
-        res = request_or_die(requests.put, f'/profiles/exe/{args.profile}/normalize', f'Unable to normalize profile at exe {args.profile}')
+        if args.scope is None:
+            profiles_res = request_or_die(
+                requests.get,
+                '/profiles',
+                f'Unable to find profiles at exe {args.profile}',
+            )
+            matches = [p for p in profiles_res.json() if p.get('exe') == args.profile]
+            if not matches:
+                fail_with(f'Unable to normalize profile at exe {args.profile}: profile does not exist')
+            normalized = []
+            for profile in matches:
+                profile_key = profile['profile_key']
+                normalized_res = request_or_die(
+                    requests.put,
+                    f'/profiles/key/{profile_key}/normalize',
+                    f'Unable to normalize profile key {profile_key}',
+                )
+                normalized.append(normalized_res.json())
+            scopes = ', '.join(str(profile.get('scope_id', 0)) for profile in normalized)
+            print(f'Normalized {len(normalized)} profiles for {args.profile} (scopes: {scopes}).')
+            return
+        params = {'scope_id': args.scope}
+        res = request_or_die(
+            requests.put,
+            f'/profiles/exe/{args.profile}/normalize',
+            f'Unable to normalize profile at exe {args.profile}',
+            params=params,
+        )
     elif args.pid:
         res = request_or_die(requests.put, f'/processes/pid/{args.pid}/normalize', f'Unable to normalize profile at pid {args.pid}')
     else:
@@ -118,7 +145,13 @@ def normalize(args: Namespace) -> None:
 @command('sensitize')
 def sensitize(args: Namespace) -> None:
     if args.profile:
-        res = request_or_die(requests.put, f'/profiles/exe/{args.profile}/sensitize', f'Unable to sensitize profile at exe {args.profile}')
+        params = {'scope_id': args.scope} if args.scope is not None else None
+        res = request_or_die(
+            requests.put,
+            f'/profiles/exe/{args.profile}/sensitize',
+            f'Unable to sensitize profile at exe {args.profile}',
+            params=params,
+        )
     elif args.pid:
         res = request_or_die(requests.put, f'/processes/pid/{args.pid}/sensitize', f'Unable to sensitize profile at pid {args.pid}')
     else:
@@ -132,7 +165,13 @@ def sensitize(args: Namespace) -> None:
 @command('tolerize')
 def tolerize(args: Namespace) -> None:
     if args.profile:
-        res = request_or_die(requests.put, f'/profiles/exe/{args.profile}/tolerize', f'Unable to tolerize profile at exe {args.profile}')
+        params = {'scope_id': args.scope} if args.scope is not None else None
+        res = request_or_die(
+            requests.put,
+            f'/profiles/exe/{args.profile}/tolerize',
+            f'Unable to tolerize profile at exe {args.profile}',
+            params=params,
+        )
     elif args.pid:
         res = request_or_die(requests.put, f'/processes/pid/{args.pid}/tolerize', f'Unable to tolerize profile at pid {args.pid}')
     else:

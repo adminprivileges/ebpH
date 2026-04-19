@@ -192,6 +192,8 @@ def parse_args(sys_args: List[str]):
     targets = normalize.add_mutually_exclusive_group(required=True)
     targets.add_argument('--profile', type=str, help='String representing the profile to normalize.')
     targets.add_argument('--pid', type=int, help='Integer representing the PID of the process to normalize.')
+    normalize.add_argument('--scope', type=int, default=None,
+            help='Optional scope ID disambiguator for --profile. If omitted, normalize all matching profile names.')
 
     sensitize = admin_commands.add_parser(
         'sensitize',
@@ -200,6 +202,8 @@ def parse_args(sys_args: List[str]):
     targets = sensitize.add_mutually_exclusive_group(required=True)
     targets.add_argument('--profile', type=str, help='String representing the profile to sensitize.')
     targets.add_argument('--pid', type=int, help='Integer representing the PID of the process to sensitize.')
+    sensitize.add_argument('--scope', type=int, default=None,
+            help='Optional scope ID disambiguator when --profile matches multiple profiles.')
 
     tolerize = admin_commands.add_parser(
         'tolerize',
@@ -208,6 +212,8 @@ def parse_args(sys_args: List[str]):
     targets = tolerize.add_mutually_exclusive_group(required=True)
     targets.add_argument('--profile', type=str, help='String representing the profile to tolerize.')
     targets.add_argument('--pid', type=int, help='Integer representing the PID of the process to tolerize.')
+    tolerize.add_argument('--scope', type=int, default=None,
+            help='Optional scope ID disambiguator when --profile matches multiple profiles.')
 
     logs = commands.add_parser('logs', help='Interact with the ebpH logs.')
 
