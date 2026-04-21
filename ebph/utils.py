@@ -22,10 +22,12 @@
 """
 
 import os
+import json
+import hashlib
 import subprocess
 import sys
 from datetime import datetime, timedelta
-from typing import Callable, Iterator, Union, Tuple, Set
+from typing import Callable, Iterator, Union, Tuple, Set, Dict
 
 from proc.core import find_processes
 import requests
@@ -129,12 +131,36 @@ def _is_container_cgroup_path(cgroup_path: str) -> bool:
     )
 
 
-def list_container_scope_ids() -> Set[int]:
+def _hash_persistent_scope_identity(identity: str) -> int:
+    digest = hashlib.blake2b(identity.encode('utf-8'), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder='little', signed=False)
+
+
+def _build_container_persistent_identity(container: Dict) -> str:
+    labels = ((container.get('Config') or {}).get('Labels') or {})
+    compose_project = labels.get('com.docker.compose.project')
+    compose_service = labels.get('com.docker.compose.service')
+    compose_number = labels.get('com.docker.compose.container-number')
+
+    if compose_project and compose_service:
+        identity = f'{compose_project}|{compose_service}'
+        if compose_number:
+            identity = f'{identity}|{compose_number}'
+        return identity
+
+    name = (container.get('Name') or '').strip('/')
+    if name:
+        return name
+
+    return str(container.get('Id') or '')
+
+
+def list_container_scope_bindings() -> Dict[int, int]:
     """
-    Best-effort set of known container scope IDs from running docker containers.
-    Scope IDs are cgroupfs inodes and match the BPF cgroup IDs on cgroup v2 hosts.
+    Best-effort runtime_scope_id -> persistent_scope_key bindings for running
+    docker containers.
     """
-    scope_ids: Set[int] = set()
+    bindings: Dict[int, int] = {}
     try:
         res = subprocess.run(
             ['docker', 'ps', '-q'],
@@ -144,25 +170,29 @@ def list_container_scope_ids() -> Set[int]:
             text=True,
         )
     except Exception:
-        return scope_ids
+        return bindings
 
     if res.returncode != 0:
-        return scope_ids
+        return bindings
 
     container_ids = [line.strip() for line in res.stdout.splitlines() if line.strip()]
 
     for container_id in container_ids:
         try:
-            pid_res = subprocess.run(
-                ['docker', 'inspect', '-f', '{{.State.Pid}}', container_id],
+            inspect_res = subprocess.run(
+                ['docker', 'inspect', container_id],
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
-            if pid_res.returncode != 0:
+            if inspect_res.returncode != 0:
                 continue
-            pid = int(pid_res.stdout.strip())
+            inspect_data = json.loads(inspect_res.stdout)
+            if not inspect_data:
+                continue
+            container = inspect_data[0]
+            pid = int(((container.get('State') or {}).get('Pid')) or 0)
             if pid <= 0:
                 continue
 
@@ -171,13 +201,26 @@ def list_container_scope_ids() -> Set[int]:
             cgroup_path = line.split(':', 2)[-1]
             if not _is_container_cgroup_path(cgroup_path):
                 continue
+            runtime_scope_id = get_process_scope_id(pid)
+            if runtime_scope_id == 0:
+                continue
 
-            full_path = os.path.join('/sys/fs/cgroup', cgroup_path.lstrip('/'))
-            scope_ids.add(os.stat(full_path).st_ino & 0xFFFF_FFFF_FFFF_FFFF)
+            identity = _build_container_persistent_identity(container)
+            if not identity:
+                identity = container_id
+            bindings[runtime_scope_id] = _hash_persistent_scope_identity(identity)
         except Exception:
             continue
 
-    return scope_ids
+    return bindings
+
+
+def list_container_scope_ids() -> Set[int]:
+    """
+    Best-effort set of known container scope IDs from running docker containers.
+    Scope IDs are cgroupfs inodes and match the BPF cgroup IDs on cgroup v2 hosts.
+    """
+    return set(list_container_scope_bindings().keys())
 
 
 def get_process_executable_path(pid: int, fallback_path: Union[str, None] = None) -> Union[str, None]:
@@ -236,6 +279,7 @@ def running_processes(scope_mode: int = 0) -> Iterator[Tuple[int, int, int, str,
     system. Iterator contains tuples of
     [@profile_key, @scope_id, @executable_key, @exe, @pid, @tid]
     """
+    scope_bindings = list_container_scope_bindings() if scope_mode != 0 else {}
     for p in find_processes():
         exe = p.exe
         pid = p.pgrp
@@ -248,5 +292,6 @@ def running_processes(scope_mode: int = 0) -> Iterator[Tuple[int, int, int, str,
             continue
         exe = get_process_executable_path(tid, exe) or exe
         scope_id = 0 if scope_mode == 0 else get_process_scope_id(tid)
-        profile_key = compose_profile_key(scope_id, executable_key)
+        persistent_scope_key = scope_id if scope_mode == 0 else scope_bindings.get(scope_id, 0)
+        profile_key = compose_profile_key(persistent_scope_key, executable_key)
         yield (profile_key, scope_id, executable_key, exe, pid, tid)

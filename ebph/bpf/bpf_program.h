@@ -140,7 +140,8 @@ static __always_inline void ebph_set_normal_time(
 /* Create a new profile at @profile_key and log @pathname association to
  * userspace. */
 static __always_inline struct ebph_profile_t *ebph_new_profile(
-    u64 profile_key, u64 scope_id, u64 executable_key, const char *pathname);
+    u64 profile_key, u64 scope_id, u64 persistent_scope_key, u64 executable_key,
+    const char *pathname);
 
 /* Push a new frame onto the sequence stack for @task_state. */
 static __always_inline struct ebph_sequence_t *ebph_push_seq(
