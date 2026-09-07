@@ -8,7 +8,7 @@ ebpH is a modern host-based intrusion detection system for Linux 5.8+ that lever
 
 ## Disclaimer
 
-This product comes with no warranty, and is built as a research system. It should be perfectly safe to run on your system due to the safety guarantees of eBPF, but we make no claims about functionality.
+This product comes with no warranty, and is built as a research system. It should be perfectly safe to run on your system due to the safety guarantees of eBPF, but all claims of functionality are bounded within the testing environments of the research experiments and do not reflect operational capability.
 
 ## Papers
 
