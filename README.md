@@ -4,9 +4,7 @@
 
 ebpH stands for Extended BPF Process Homeostasis.
 
-ebpH is a modern host-based intrusion detection system for Linux 5.8+ that
-leverages the power of Extended BPF (eBPF) to monitor processes and detect anomalous behavior.
-This effectively constitutes an eBPF implementation of [pH (Process Homeostasis)](https://people.scs.carleton.ca/~mvvelzen/pH/pH.html).
+ebpH is a modern host-based intrusion detection system for Linux 5.8+ that leverages the power of Extended BPF (eBPF) to monitor processes and detect anomalous behavior. This effectively constitutes an eBPF implementation of the process homeostasis study. Since its conception. This repository is a fork of the original ebpH tool with extended functionality to more effectively work in modern container environments. It includes optional changes in profiling scope to better fit multi-tenant environments as well as new detector logic coupled with a configurable deterministic layer and an optional AI agent sidecar. 
 
 ## Disclaimer
 
@@ -14,13 +12,9 @@ This product comes with no warranty, and is built as a research system. It shoul
 
 ## Papers
 
-### ebpH
-
-- [My thesis](https://www.cisl.carleton.ca/~will/written/coursework/undergrad-ebpH-thesis.pdf)
-
-### pH
-
-- [My supervisor's original dissertation on pH](https://people.scs.carleton.ca/~soma/pubs/soma-diss.pdf)
+- [The original dissertation on pH](https://people.scs.carleton.ca/~soma/pubs/soma-diss.pdf)
+- [pH (Process Homeostasis)](https://people.scs.carleton.ca/~mvvelzen/pH/pH.html)
+- [ebph thesis](https://www.cisl.carleton.ca/~will/written/coursework/undergrad-ebpH-thesis.pdf)
 - [A Sense of Self for UNIX Processes](https://www.cs.unm.edu/~immsec/publications/ieee-sp-96-unix.pdf)
 - [Lightweight Intrustion Detection for Networked Operating Systems](http://people.scs.carleton.ca/~soma/pubs/jcs1998.pdf)
 - [Lookahead Pairs and Full Sequences: A Tale of Two Anomaly Detection Methods](http://people.scs.carleton.ca/~soma/pubs/inoue-albany2007.pdf)
@@ -124,17 +118,19 @@ ebpH supports two profiling scope modes:
 
 In container mode, the same executable can have distinct profiles across different container scopes. Profile and process output includes `scope_id` to support research comparisons and anomaly-rate analysis by scope.
 
-In container mode, two processes running the same executable within the same container are expected to share one profile because both `scope_id` and `executable_identity` match.
+In `container1 mode, two processes running the same executable within the same container are expected to share one profile because both `scope_id` and `executable_identity` match.
 
-For bootstrap of already-running processes, executable identity is resolved via `/proc/<pid>/exe` first (with path-based fallback) to avoid host-path assumptions for containerized filesystems.
+For `bootstrap` of already-running processes, executable identity is resolved via `/proc/<pid>/exe` first (with path-based fallback) to avoid host-path assumptions for containerized filesystems.
 
-### Variable 2 context pipeline (userspace)
+### Variable 2 context pipeline
 
 The var2-context branch adds a userspace decision layer on top of existing ebpH detector signals.
 
 - Stage 1 remains based on existing ebpH anomaly/profile/process signals.
 - Process-window cases are opened from anomaly activity, aggregated in userspace, scored, and routed by a three-band policy (`low`, `candidate`, `high`).
 - Replay artifacts are written for offline reproducibility and cross-condition reruns.
+
+### Usage
 
 Useful daemon flags:
 
